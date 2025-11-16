@@ -12,8 +12,12 @@ if (!process.env.TELEGRAM_BOT_TOKEN) {
 export type TriggerInfoTelegramOnNewMessage = {
   type: "telegram/message";
   params: {
-    userName: string;
-    message: string;
+    messageText: string;
+    telegramId: string;
+    chatId: string;
+    username?: string;
+    firstName?: string;
+    lastName?: string;
   };
   payload: any;
 };
@@ -37,20 +41,35 @@ export function registerTelegramTrigger({
         try {
           const payload = await c.req.json();
 
-          logger?.info("📝 [Telegram] payload", payload);
+          logger?.info("📝 [Telegram] Received webhook payload", {
+            hasMessage: !!payload.message,
+            messageType: payload.message?.text ? 'text' : 'other',
+          });
+
+          if (!payload.message || !payload.message.text) {
+            logger?.warn("⚠️ [Telegram] Ignoring non-text message");
+            return c.text("OK", 200);
+          }
+
+          const message = payload.message;
+          const from = message.from;
 
           await handler(mastra, {
             type: triggerType,
             params: {
-              userName: payload.message.from.username,
-              message: payload.message.text,
+              messageText: message.text,
+              telegramId: from.id.toString(),
+              chatId: message.chat.id.toString(),
+              username: from.username,
+              firstName: from.first_name,
+              lastName: from.last_name,
             },
             payload,
           } as TriggerInfoTelegramOnNewMessage);
 
           return c.text("OK", 200);
         } catch (error) {
-          logger?.error("Error handling Telegram webhook:", error);
+          logger?.error("❌ [Telegram] Error handling webhook:", error);
           return c.text("Internal Server Error", 500);
         }
       },

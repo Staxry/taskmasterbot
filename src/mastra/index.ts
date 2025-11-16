@@ -9,8 +9,9 @@ import { z } from "zod";
 
 import { sharedPostgresStorage } from "./storage";
 import { inngest, inngestServe } from "./inngest";
-import { exampleWorkflow } from "./workflows/exampleWorkflow"; // Replace with your own workflow
-import { exampleAgent } from "./agents/exampleAgent"; // Replace with your own agent
+import { telegramTaskWorkflow } from "./workflows/telegramTaskWorkflow";
+import { telegramTaskAgent } from "./agents/telegramTaskAgent";
+import { registerTelegramTrigger } from "../triggers/telegramTriggers";
 
 class ProductionPinoLogger extends MastraLogger {
   protected logger: pino.Logger;
@@ -56,9 +57,13 @@ class ProductionPinoLogger extends MastraLogger {
 export const mastra = new Mastra({
   storage: sharedPostgresStorage,
   // Register your workflows here
-  workflows: {},
+  workflows: {
+    telegramTaskWorkflow,
+  },
   // Register your agents here
-  agents: {},
+  agents: {
+    telegramTaskAgent,
+  },
   mcpServers: {
     allTools: new MCPServer({
       name: "allTools",
@@ -208,6 +213,37 @@ export const mastra = new Mastra({
       // ...registerGithubTrigger({ ... }),
       // ...registerSlackTrigger({ ... }),
       // ...registerStripeWebhook({ ... }),
+      
+      // ======================================================================
+      // Telegram Webhook Trigger
+      // ======================================================================
+      ...registerTelegramTrigger({
+        triggerType: "telegram/message",
+        handler: async (mastra, triggerInfo) => {
+          const logger = mastra.getLogger();
+          logger?.info("🎯 [Telegram Trigger] Processing message", {
+            telegramId: triggerInfo.params.telegramId,
+            messageLength: triggerInfo.params.messageText.length,
+          });
+
+          const threadId = `telegram-user-${triggerInfo.params.telegramId}`;
+          const botToken = process.env.TELEGRAM_BOT_TOKEN || '';
+
+          const run = await telegramTaskWorkflow.createRunAsync();
+          await run.start({
+            inputData: {
+              threadId,
+              messageText: triggerInfo.params.messageText,
+              telegramId: triggerInfo.params.telegramId,
+              chatId: triggerInfo.params.chatId,
+              username: triggerInfo.params.username,
+              firstName: triggerInfo.params.firstName,
+              lastName: triggerInfo.params.lastName,
+              botToken,
+            },
+          });
+        }
+      }),
     ],
   },
   logger:
