@@ -874,9 +874,10 @@ async def callback_take_task(callback: CallbackQuery):
     cur = conn.cursor()
     
     try:
-        # Проверяем что задача действительно не назначена
+        # Получаем полную информацию о задаче включая фото
         cur.execute(
-            "SELECT id, title, assigned_to_id, created_by_id FROM tasks WHERE id = %s",
+            """SELECT id, title, description, priority, due_date, assigned_to_id, created_by_id, task_photo_file_id 
+               FROM tasks WHERE id = %s""",
             (task_id,)
         )
         task = cur.fetchone()
@@ -885,7 +886,7 @@ async def callback_take_task(callback: CallbackQuery):
             await callback.answer("❌ Задача не найдена.", show_alert=True)
             return
         
-        task_id_db, title, assigned_to_id, created_by_id = task
+        task_id_db, title, description, priority, due_date, assigned_to_id, created_by_id, task_photo_file_id = task
         
         if assigned_to_id is not None:
             await callback.answer("❌ Эта задача уже назначена другому сотруднику.", show_alert=True)
@@ -910,18 +911,50 @@ async def callback_take_task(callback: CallbackQuery):
             
             if creator:
                 creator_telegram_id, creator_username = creator
-                try:
-                    await bot.send_message(
-                        chat_id=creator_telegram_id,
-                        text=f"""✋ <b>Задачу взяли в работу!</b>
+                
+                # Формируем текст уведомления
+                priority_text = {
+                    'urgent': '🔴 Срочно',
+                    'high': '🟠 Высокий',
+                    'medium': '🟡 Средний',
+                    'low': '🟢 Низкий'
+                }.get(priority, priority)
+                
+                notification_text = f"""✋ <b>Задачу взяли в работу!</b>
 
-<b>Задача:</b> {title}
+<b>Задача #{task_id}</b>
+<b>Название:</b> {title}
+<b>Описание:</b> {description or 'Нет описания'}
+<b>Приоритет:</b> {priority_text}
+<b>Срок:</b> 📅 {due_date}
 <b>Исполнитель:</b> @{username}
 <b>Статус:</b> 🔄 В работе
 
-Используйте /start для просмотра.""",
-                        parse_mode='HTML'
-                    )
+Нажмите кнопку ниже для просмотра задачи."""
+                
+                # Кнопка для открытия задачи
+                task_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="📂 Открыть задачу", callback_data=f"task_{task_id}")]
+                ])
+                
+                try:
+                    if task_photo_file_id:
+                        # Отправляем с фото
+                        await bot.send_photo(
+                            chat_id=creator_telegram_id,
+                            photo=task_photo_file_id,
+                            caption=notification_text,
+                            parse_mode='HTML',
+                            reply_markup=task_keyboard
+                        )
+                    else:
+                        # Отправляем без фото
+                        await bot.send_message(
+                            chat_id=creator_telegram_id,
+                            text=notification_text,
+                            parse_mode='HTML',
+                            reply_markup=task_keyboard
+                        )
                     logger.info(f"✅ Task assignment notification sent to {creator_username}")
                 except Exception as notif_error:
                     logger.warning(f"⚠️ Could not send notification: {notif_error}")
@@ -1494,20 +1527,27 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
 
 Используйте /start для просмотра задачи."""
                 
+                # Кнопка для открытия задачи
+                task_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="📂 Открыть задачу", callback_data=f"task_{task_id}")]
+                ])
+                
                 if photo_file_id:
                     # Отправляем с фото
                     await bot.send_photo(
                         chat_id=assignee_telegram_id,
                         photo=photo_file_id,
                         caption=notification_text,
-                        parse_mode='HTML'
+                        parse_mode='HTML',
+                        reply_markup=task_keyboard
                     )
                 else:
                     # Отправляем без фото
                     await bot.send_message(
                         chat_id=assignee_telegram_id,
                         text=notification_text,
-                        parse_mode='HTML'
+                        parse_mode='HTML',
+                        reply_markup=task_keyboard
                     )
                 logger.info(f"✅ Notification sent to {assignee_username} (task #{task_id})")
             except Exception as notif_error:
