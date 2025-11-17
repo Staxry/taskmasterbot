@@ -878,9 +878,10 @@ async def callback_take_task(callback: CallbackQuery):
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
     
-    if user['role'] == 'admin':
-        await callback.answer("❌ Админы не могут брать задачи в работу. Используйте назначение через создание задачи.", show_alert=True)
-        return
+    # Временно разрешаем админам брать задачи для тестирования
+    # if user['role'] == 'admin':
+    #     await callback.answer("❌ Админы не могут брать задачи в работу. Используйте назначение через создание задачи.", show_alert=True)
+    #     return
     
     conn = get_db_connection()
     cur = conn.cursor()
