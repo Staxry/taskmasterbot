@@ -1,6 +1,16 @@
 # Overview
 
-This project is a full-featured asynchronous Telegram bot designed for task management. Built with Python and the `aiogram` library, it operates via commands using polling, ensuring free operation without AI costs. The system offers a robust, production-ready implementation with a modular architecture, role-based access for task management (admin/employee), and utilizes **SQLite** for local data storage. Its core capabilities include interactive inline buttons for all commands, a whitelist authorization system, FSM for task and user management, error handling, task photos, automated deadline notifications (24h/3h reminders and overdue alerts), advanced statistics with Excel export, pagination, search, **full timezone support with precise time selection**, and **display of user real names from Telegram profiles**. The project aims to provide an efficient and cost-effective solution for team task coordination with proactive deadline management and accurate time tracking in the Kaliningrad timezone (UTC+2).
+This project is a full-featured asynchronous Telegram bot designed for task management. Built with Python and the `aiogram` library, it operates via commands using polling, ensuring free operation without AI costs. The system offers a robust, production-ready implementation with a modular architecture, role-based access for task management (admin/employee), and utilizes **SQLite** for local data storage. Its core capabilities include interactive inline buttons for all commands, a whitelist authorization system, FSM for task and user management, error handling, task photos, automated deadline notifications (24h/3h reminders and overdue alerts), advanced statistics with Excel export, pagination, search, **full timezone support with precise time selection**, and **consistent display of user real names from Telegram profiles** in the format "First Last (@username)" throughout the entire interface. The project aims to provide an efficient and cost-effective solution for team task coordination with proactive deadline management and accurate time tracking in the Kaliningrad timezone (UTC+2).
+
+## Recent Updates (Nov 17, 2025)
+
+- **Enhanced User Display Format**: Implemented consistent "First Last (@username)" display format across the entire bot interface
+  - Task details now show full names for assignees: "Имя Фамилия (@username)" or "@username" fallback
+  - Task lists display assignees with full identity (title truncated if needed to preserve @username)
+  - All notifications (task assignment, status changes, overdue alerts) include full names
+  - Task creation/completion messages show both creator and assignee names
+  - Updated all SQL queries to fetch `first_name` and `last_name` from users table
+  - Unified formatting logic prevents truncation of @username handles
 
 # User Preferences
 
