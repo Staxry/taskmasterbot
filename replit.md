@@ -1,6 +1,6 @@
 # Overview
 
-This project is a full-featured asynchronous Telegram bot designed for task management. Built with Python and the `aiogram` library, it operates via commands using polling, ensuring free operation without AI costs. The system offers a robust, production-ready implementation with a modular architecture, role-based access for task management (admin/employee), and utilizes PostgreSQL for data storage. Its core capabilities include interactive inline buttons for all commands, a whitelist authorization system, FSM for task and user management, error handling, task photos, automated deadline notifications (24h/3h reminders and overdue alerts), advanced statistics with Excel export, pagination, search, and **full timezone support with precise time selection**. The project aims to provide an efficient and cost-effective solution for team task coordination with proactive deadline management and accurate time tracking in the Moscow timezone (UTC+3).
+This project is a full-featured asynchronous Telegram bot designed for task management. Built with Python and the `aiogram` library, it operates via commands using polling, ensuring free operation without AI costs. The system offers a robust, production-ready implementation with a modular architecture, role-based access for task management (admin/employee), and utilizes PostgreSQL for data storage. Its core capabilities include interactive inline buttons for all commands, a whitelist authorization system, FSM for task and user management, error handling, task photos, automated deadline notifications (24h/3h reminders and overdue alerts), advanced statistics with Excel export, pagination, search, and **full timezone support with precise time selection**. The project aims to provide an efficient and cost-effective solution for team task coordination with proactive deadline management and accurate time tracking in the Kaliningrad timezone (UTC+2).
 
 # User Preferences
 
@@ -10,7 +10,7 @@ Preferred communication style: Simple, everyday language (Russian).
 
 ## Core Framework
 
-The application is developed with **Python 3.11 and aiogram 3.22**, leveraging `asyncio` for asynchronous command processing and operating in polling mode for continuous Telegram API interaction. It uses `MemoryStorage` for the Finite State Machine (FSM) and adheres to `aiogram 3.x` best practices with a modular, router-based architecture. The system includes **pytz** for comprehensive timezone support, ensuring all timestamps are stored and displayed correctly in the Moscow timezone (Europe/Moscow UTC+3).
+The application is developed with **Python 3.11 and aiogram 3.22**, leveraging `asyncio` for asynchronous command processing and operating in polling mode for continuous Telegram API interaction. It uses `MemoryStorage` for the Finite State Machine (FSM) and adheres to `aiogram 3.x` best practices with a modular, router-based architecture. The system includes **pytz** for comprehensive timezone support, ensuring all timestamps are stored and displayed correctly in the Kaliningrad timezone (Europe/Kaliningrad UTC+2).
 
 ## Modular Structure (v2.0)
 
