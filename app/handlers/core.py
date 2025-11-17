@@ -1840,14 +1840,14 @@ async def callback_back_to_main(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@core_router.message()
+@core_router.message(F.text)
 async def handle_unauthorized(message: Message):
-    """Обработка сообщений от неавторизованных пользователей"""
+    """Обработка текстовых сообщений от неавторизованных пользователей"""
     telegram_id = str(message.from_user.id)
     username = message.from_user.username
     first_name = message.from_user.first_name or ''
     
-    logger.info(f"📨 Message from {telegram_id} (@{username}): {message.text[:30] if message.text else 'non-text'}")
+    logger.info(f"📨 Text message from {telegram_id} (@{username}): {message.text[:30] if message.text else 'no text'}")
     
     user = get_or_create_user(telegram_id, username, first_name)
     
