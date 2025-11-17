@@ -422,8 +422,8 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
                 await state.clear()
                 return
             
-            assignee_username = assignee[0]
-            assignee_telegram_id = assignee[1]
+            assignee_username = assignee['username']
+            assignee_telegram_id = assignee['telegram_id']
         else:
             assignee_username = None
             assignee_telegram_id = None
@@ -433,8 +433,7 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
         cur.execute(
             """INSERT INTO tasks 
                (title, description, priority, status, due_date, assigned_to_id, created_by_id, task_photo_file_id, created_at, updated_at)
-               VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, datetime('now'), datetime('now'))
-               RETURNING id, title, priority, status, task_photo_file_id""",
+               VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, datetime('now'), datetime('now'))""",
             (
                 title,
                 description,
@@ -445,10 +444,18 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
                 photo_file_id
             )
         )
+        task_id = cur.lastrowid
+        cur.close()  # Закрываем курсор перед commit
         conn.commit()
+        
+        # Получаем созданную задачу с новым курсором
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, title, task_photo_file_id FROM tasks WHERE id = ?",
+            (task_id,)
+        )
         task = cur.fetchone()
-        task_id = task[0]
-        saved_photo_id = task[4] if len(task) > 4 else None
+        saved_photo_id = task['task_photo_file_id'] if task else None
         
         logger.info(f"✅ Task #{task_id} created successfully, saved_photo={saved_photo_id}")
         
@@ -460,8 +467,8 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
         }.get(priority, priority)
         
         success_msg = f"✅ <b>Задача создана успешно!</b>\n\n"
-        success_msg += f"ID: {task[0]}\n"
-        success_msg += f"Название: {task[1]}\n"
+        success_msg += f"ID: {task_id}\n"
+        success_msg += f"Название: {title}\n"
         success_msg += f"Приоритет: {priority_text}\n"
         success_msg += f"Срок: 📅 {due_datetime.strftime('%d.%m.%Y %H:%M')} (МСК)\n"
         

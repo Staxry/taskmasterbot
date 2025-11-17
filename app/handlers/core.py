@@ -267,13 +267,14 @@ async def show_my_tasks_page(callback: CallbackQuery, page: int = 1):
     try:
         # Подсчёт общего количества
         if user['role'] == 'admin':
-            cur.execute("SELECT COUNT(*) FROM tasks")
+            cur.execute("SELECT COUNT(*) as count FROM tasks")
         else:
             cur.execute(
-                "SELECT COUNT(*) FROM tasks WHERE assigned_to_id = ? OR assigned_to_id IS NULL",
+                "SELECT COUNT(*) as count FROM tasks WHERE assigned_to_id = ? OR assigned_to_id IS NULL",
                 (user['id'],)
             )
-        total_count = cur.fetchone()[0]
+        result = cur.fetchone()
+        total_count = result["count"] if result else 0
         
         # Пагинация
         page_size = 10
@@ -426,8 +427,9 @@ async def show_all_tasks_page(callback: CallbackQuery, page: int = 1):
     
     try:
         # Подсчёт общего количества
-        cur.execute("SELECT COUNT(*) FROM tasks")
-        total_count = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) as count FROM tasks")
+        result = cur.fetchone()
+        total_count = result["count"] if result else 0
         
         # Пагинация
         page_size = 10
@@ -1615,18 +1617,19 @@ async def show_search_results_page(message: Message, user: dict, query: str, pag
         # Подсчёт общего количества
         if user['role'] == 'admin':
             cur.execute(
-                """SELECT COUNT(*) FROM tasks 
+                """SELECT COUNT(*) as count FROM tasks 
                    WHERE title LIKE ? OR description LIKE ?""",
                 (search_pattern, search_pattern)
             )
         else:
             cur.execute(
-                """SELECT COUNT(*) FROM tasks 
+                """SELECT COUNT(*) as count FROM tasks 
                    WHERE (title LIKE ? OR description LIKE ?)
                    AND (assigned_to_id = ? OR assigned_to_id IS NULL)""",
                 (search_pattern, search_pattern, user['id'])
             )
-        total_count = cur.fetchone()[0]
+        result = cur.fetchone()
+        total_count = result["count"] if result else 0
         
         if total_count == 0:
             await message.answer(

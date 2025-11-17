@@ -37,8 +37,9 @@ def get_dashboard_statistics(user_role: str = 'admin') -> Dict[str, Any]:
         stats = {}
         
         # Общее количество задач
-        cur.execute("SELECT COUNT(*) FROM tasks")
-        stats['total_tasks'] = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) as count FROM tasks")
+        result = cur.fetchone()
+        stats['total_tasks'] = result['count'] if result else 0
         
         # Задачи по статусам
         cur.execute("""
@@ -73,29 +74,32 @@ def get_dashboard_statistics(user_role: str = 'admin') -> Dict[str, Any]:
         
         # Просроченные задачи
         cur.execute("""
-            SELECT COUNT(*) 
+            SELECT COUNT(*) as count 
             FROM tasks 
             WHERE due_date < NOW() 
             AND status NOT IN ('completed', 'rejected')
         """)
-        stats['overdue_tasks'] = cur.fetchone()[0]
+        result = cur.fetchone()
+        stats['overdue_tasks'] = result['count'] if result else 0
         
         # Задачи за сегодня (созданные)
         cur.execute("""
-            SELECT COUNT(*) 
+            SELECT COUNT(*) as count 
             FROM tasks 
             WHERE DATE(created_at) = CURRENT_DATE
         """)
-        stats['today_created'] = cur.fetchone()[0]
+        result = cur.fetchone()
+        stats['today_created'] = result['count'] if result else 0
         
         # Завершённые за последние 7 дней
         cur.execute("""
-            SELECT COUNT(*) 
+            SELECT COUNT(*) as count 
             FROM tasks 
             WHERE status = 'completed'
             AND updated_at >= NOW() - INTERVAL '7 days'
         """)
-        stats['completed_last_week'] = cur.fetchone()[0]
+        result = cur.fetchone()
+        stats['completed_last_week'] = result['count'] if result else 0
         
         # Топ исполнителей
         cur.execute("""
