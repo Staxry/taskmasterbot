@@ -3,11 +3,17 @@ Configuration module for the Telegram bot
 """
 import os
 from dotenv import load_dotenv
+import pytz
 
 load_dotenv()
 
 # Telegram Bot Token
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+
+# Timezone Configuration
+# Установите нужный часовой пояс для вашего региона
+# Примеры: 'Europe/Moscow', 'Europe/Kiev', 'Asia/Almaty', 'Europe/Minsk'
+TIMEZONE = pytz.timezone(os.getenv('TIMEZONE', 'Europe/Moscow'))
 
 # Database Configuration
 DATABASE_URL = os.getenv('DATABASE_URL')

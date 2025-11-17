@@ -2,3 +2,4 @@
 matplotlib
 openpyxl
 pillow
+pytz
