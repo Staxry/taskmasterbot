@@ -761,6 +761,8 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
     # Собираем статус из всех частей после task_id (для in_progress, partially_completed)
     new_status = '_'.join(parts[2:])
     
+    logger.info(f"🔍 Parsing callback_data: {callback.data} -> parts: {parts} -> task_id: {task_id}, new_status: {new_status}")
+    
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
