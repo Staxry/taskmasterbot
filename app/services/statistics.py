@@ -43,11 +43,13 @@ def get_dashboard_statistics(user_role: str = 'admin') -> Dict[str, Any]:
         
         # Задачи по статусам
         cur.execute("""
-            SELECT status, COUNT(*) 
+            SELECT status, COUNT(*) as count
             FROM tasks 
             GROUP BY status
         """)
-        status_counts = dict(cur.fetchall())
+        status_results = cur.fetchall()
+        # Правильно создаём словарь из результатов dict_factory
+        status_counts = {row['status']: row['count'] for row in status_results}
         stats['by_status'] = {
             'pending': status_counts.get('pending', 0),
             'in_progress': status_counts.get('in_progress', 0),
@@ -65,12 +67,14 @@ def get_dashboard_statistics(user_role: str = 'admin') -> Dict[str, Any]:
         
         # Задачи по приоритетам
         cur.execute("""
-            SELECT priority, COUNT(*) 
+            SELECT priority, COUNT(*) as count
             FROM tasks 
             WHERE status NOT IN ('completed', 'rejected')
             GROUP BY priority
         """)
-        stats['by_priority'] = dict(cur.fetchall())
+        priority_results = cur.fetchall()
+        # Правильно создаём словарь из результатов dict_factory
+        stats['by_priority'] = {row['priority']: row['count'] for row in priority_results}
         
         # Просроченные задачи
         cur.execute("""
