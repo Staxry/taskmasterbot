@@ -4,6 +4,13 @@ This project is a full-featured asynchronous Telegram bot designed for task mana
 
 ## Recent Updates (Nov 17, 2025)
 
+- **New Task Broadcast Notifications**: All users notified about unassigned tasks
+  - When a new task is created without an assignee, all users (admins + employees) receive notification
+  - Notification excludes the task creator to avoid self-notification
+  - Message format: "🆓 Новая свободная задача!" with task details and "Open Task" button
+  - Encourages team members to pick up available tasks proactively
+  - Confirmation message to creator shows "📢 Уведомления отправлены всем пользователям"
+
 - **Task Reopening Notifications**: Employee notifications when task is returned to work
   - When admin reopens a completed/partially completed task, assignee receives instant notification
   - Notification includes admin name, task details, deadline, and direct "Open Task" button

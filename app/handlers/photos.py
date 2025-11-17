@@ -491,6 +491,75 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
         
         logger.info(f"✅ Task #{task_id} created successfully, saved_photo={saved_photo_id}")
         
+        # Если задача создана без исполнителя, уведомляем всех пользователей
+        if assignee_id is None:
+            logger.info(f"📢 Task #{task_id} created without assignee, notifying all users")
+            
+            cur.execute("SELECT telegram_id, username FROM users WHERE role IN ('admin', 'employee')")
+            all_users = cur.fetchall()
+            
+            priority_emoji = {
+                'urgent': '🔴',
+                'high': '🟠',
+                'medium': '🟡',
+                'low': '🟢'
+            }.get(priority, '⚪')
+            
+            priority_text_notification = {
+                'urgent': '🔴 Срочно',
+                'high': '🟠 Высокий',
+                'medium': '🟡 Средний',
+                'low': '🟢 Низкий'
+            }.get(priority, priority)
+            
+            # Форматируем имя создателя
+            if first_name or last_name:
+                creator_display = f"{first_name or ''} {last_name or ''}".strip() + f" (@{username})"
+            else:
+                creator_display = f"@{username}"
+            
+            broadcast_message = f"""🆓 <b>Новая свободная задача!</b>
+
+{priority_emoji} <b>#{task_id}:</b> {title}
+📝 <b>Описание:</b> {description or 'Нет описания'}
+<b>Приоритет:</b> {priority_text_notification}
+📅 <b>Срок:</b> {due_datetime.strftime('%d.%m.%Y %H:%M')} ({TIMEZONE_ABBR})
+👤 <b>Создал:</b> {creator_display}
+
+⚡ Задача доступна для выполнения. Кто-то может взять её в работу!"""
+            
+            task_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📂 Открыть задачу", callback_data=f"task_{task_id}")]
+            ])
+            
+            notification_count = 0
+            for user_data in all_users:
+                # Не отправляем уведомление создателю задачи
+                if user_data['telegram_id'] == telegram_id:
+                    continue
+                
+                try:
+                    if is_message:
+                        await callback_or_message.bot.send_message(
+                            chat_id=user_data['telegram_id'],
+                            text=broadcast_message,
+                            parse_mode='HTML',
+                            reply_markup=task_keyboard
+                        )
+                    else:
+                        await callback_or_message.message.bot.send_message(
+                            chat_id=user_data['telegram_id'],
+                            text=broadcast_message,
+                            parse_mode='HTML',
+                            reply_markup=task_keyboard
+                        )
+                    notification_count += 1
+                    logger.debug(f"✅ Notification sent to {user_data['username']}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to send notification to {user_data['username']}: {e}")
+            
+            logger.info(f"📧 Sent {notification_count} notifications about new free task #{task_id}")
+        
         priority_text = {
             'urgent': '🔴 Срочно',
             'high': '🟠 Высокий',
@@ -521,6 +590,8 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
         
         if assignee_username:
             success_msg += f"\n\n📨 Уведомление отправлено исполнителю"
+        elif assignee_id is None:
+            success_msg += f"\n\n📢 Уведомления отправлены всем пользователям"
         
         if is_message:
             await callback_or_message.answer(
