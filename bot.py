@@ -6,9 +6,11 @@ import psycopg2
 from datetime import datetime
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.filters import Command, CommandStart
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 
 load_dotenv()
 
@@ -24,6 +26,14 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
+
+
+class CreateTaskStates(StatesGroup):
+    waiting_for_title = State()
+    waiting_for_description = State()
+    waiting_for_priority = State()
+    waiting_for_due_date = State()
+    waiting_for_assigned_to = State()
 
 
 def get_db_connection():
@@ -44,7 +54,6 @@ def get_or_create_user(telegram_id: str, username: str, first_name: str):
         user = cur.fetchone()
         
         if user:
-            logger.info(f"👤 Found existing user: {telegram_id}")
             return {
                 'id': user[0],
                 'telegram_id': user[1],
@@ -72,7 +81,70 @@ def get_or_create_user(telegram_id: str, username: str, first_name: str):
         conn.close()
 
 
-@dp.message(Command('start', 'старт'))
+def get_main_keyboard(role: str):
+    """Главное меню с кнопками"""
+    buttons = [
+        [InlineKeyboardButton(text="📋 Мои задачи", callback_data="my_tasks")],
+    ]
+    
+    if role == 'admin':
+        buttons.append([InlineKeyboardButton(text="📊 Все задачи", callback_data="all_tasks")])
+        buttons.append([InlineKeyboardButton(text="➕ Создать задачу", callback_data="create_task")])
+    
+    buttons.append([InlineKeyboardButton(text="❓ Помощь", callback_data="help")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_task_keyboard(task_id: int, current_status: str):
+    """Клавиатура для работы с задачей"""
+    buttons = []
+    
+    # Кнопки статусов
+    statuses = {
+        'pending': '⏳ Ожидает',
+        'in_progress': '🔄 В работе',
+        'completed': '✅ Завершена',
+        'rejected': '❌ Отклонена'
+    }
+    
+    status_buttons = []
+    for status, label in statuses.items():
+        if status != current_status:
+            status_buttons.append(
+                InlineKeyboardButton(
+                    text=label,
+                    callback_data=f"status_{task_id}_{status}"
+                )
+            )
+    
+    # Разбиваем кнопки статусов на строки по 2
+    for i in range(0, len(status_buttons), 2):
+        buttons.append(status_buttons[i:i+2])
+    
+    # Кнопка назад
+    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="my_tasks")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_priority_keyboard():
+    """Клавиатура для выбора приоритета"""
+    buttons = [
+        [
+            InlineKeyboardButton(text="🔴 Срочно", callback_data="priority_urgent"),
+            InlineKeyboardButton(text="🟠 Высокий", callback_data="priority_high")
+        ],
+        [
+            InlineKeyboardButton(text="🟡 Средний", callback_data="priority_medium"),
+            InlineKeyboardButton(text="🟢 Низкий", callback_data="priority_low")
+        ],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+@dp.message(CommandStart())
 async def cmd_start(message: Message):
     """Обработка команды /start"""
     telegram_id = str(message.from_user.id)
@@ -83,59 +155,61 @@ async def cmd_start(message: Message):
     
     user = get_or_create_user(telegram_id, username, first_name)
     
+    role_text = "👨‍💼 Администратор" if user['role'] == 'admin' else "👤 Сотрудник"
+    
     await message.answer(
         f"👋 Привет, {user['username']}!\n\n"
-        f"Вы зарегистрированы как: <b>{user['role']}</b>\n\n"
-        f"Используйте /help для списка команд.",
-        parse_mode='HTML'
+        f"Роль: <b>{role_text}</b>\n\n"
+        f"Выберите действие:",
+        parse_mode='HTML',
+        reply_markup=get_main_keyboard(user['role'])
     )
 
 
-@dp.message(Command('help', 'помощь'))
-async def cmd_help(message: Message):
-    """Обработка команды /help"""
-    telegram_id = str(message.from_user.id)
-    username = message.from_user.username or message.from_user.first_name
-    first_name = message.from_user.first_name or ''
+@dp.callback_query(F.data == "help")
+async def callback_help(callback: CallbackQuery):
+    """Обработка кнопки Помощь"""
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username or callback.from_user.first_name
+    first_name = callback.from_user.first_name or ''
     
     user = get_or_create_user(telegram_id, username, first_name)
     
     if user['role'] == 'admin':
         text = """📋 <b>Доступные команды (Администратор):</b>
 
-<b>Общие:</b>
-/start - Приветствие
-/help - Список команд
-
-<b>Управление задачами:</b>
-/create_task - Создать задачу
-/my_tasks - Мои задачи
-/all_tasks - Все задачи
-/task_details &lt;ID&gt; - Детали задачи
-/update_status &lt;ID&gt; &lt;статус&gt; - Обновить статус
-
-<b>Создание задачи:</b>
-/create_task title:"название" description:"описание" priority:high due_date:2025-12-25 assigned_to:telegram_id"""
+🔹 <b>Мои задачи</b> - список ваших задач
+🔹 <b>Все задачи</b> - все задачи в системе
+🔹 <b>Создать задачу</b> - добавить новую задачу
+🔹 Нажмите на задачу для просмотра деталей
+🔹 Используйте кнопки для изменения статуса"""
     else:
         text = """📋 <b>Доступные команды (Сотрудник):</b>
 
-/start - Приветствие
-/help - Список команд
-/my_tasks - Мои задачи
-/task_details &lt;ID&gt; - Детали задачи
-/update_status &lt;ID&gt; &lt;статус&gt; - Обновить статус
+🔹 <b>Мои задачи</b> - список ваших задач
+🔹 Нажмите на задачу для просмотра деталей
+🔹 Используйте кнопки для изменения статуса
 
-<b>Статусы:</b> pending, in_progress, completed, rejected"""
+<b>Статусы:</b>
+⏳ Ожидает
+🔄 В работе
+✅ Завершена
+❌ Отклонена"""
     
-    await message.answer(text, parse_mode='HTML')
+    await callback.message.edit_text(
+        text,
+        parse_mode='HTML',
+        reply_markup=get_main_keyboard(user['role'])
+    )
+    await callback.answer()
 
 
-@dp.message(Command('my_tasks', 'мои_задачи'))
-async def cmd_my_tasks(message: Message):
-    """Обработка команды /my_tasks"""
-    telegram_id = str(message.from_user.id)
-    username = message.from_user.username or message.from_user.first_name
-    first_name = message.from_user.first_name or ''
+@dp.callback_query(F.data == "my_tasks")
+async def callback_my_tasks(callback: CallbackQuery):
+    """Обработка кнопки Мои задачи"""
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username or callback.from_user.first_name
+    first_name = callback.from_user.first_name or ''
     
     user = get_or_create_user(telegram_id, username, first_name)
     
@@ -147,44 +221,80 @@ async def cmd_my_tasks(message: Message):
             """SELECT id, title, status, priority, due_date 
                FROM tasks 
                WHERE assigned_to_id = %s 
-               ORDER BY created_at DESC""",
+               ORDER BY created_at DESC
+               LIMIT 20""",
             (user['id'],)
         )
         tasks = cur.fetchall()
         
         if not tasks:
-            await message.answer("📋 У вас пока нет задач.")
+            await callback.message.edit_text(
+                "📋 У вас пока нет задач.",
+                reply_markup=get_main_keyboard(user['role'])
+            )
+            await callback.answer()
             return
         
         text = f"📋 <b>Ваши задачи ({len(tasks)}):</b>\n\n"
         
-        for task in tasks:
-            task_id, title, status, priority, due_date = task
-            text += f"""📌 <b>ID {task_id}:</b> {title}
-   Статус: {status}
-   Приоритет: {priority}
-   Срок: {due_date}
-
-"""
+        # Создаём кнопки для каждой задачи
+        buttons = []
         
-        await message.answer(text.strip(), parse_mode='HTML')
+        status_emoji = {
+            'pending': '⏳',
+            'in_progress': '🔄',
+            'completed': '✅',
+            'rejected': '❌'
+        }
+        
+        priority_emoji = {
+            'urgent': '🔴',
+            'high': '🟠',
+            'medium': '🟡',
+            'low': '🟢'
+        }
+        
+        for task in tasks[:10]:  # Показываем максимум 10 задач
+            task_id, title, status, priority, due_date = task
+            emoji_status = status_emoji.get(status, '📌')
+            emoji_priority = priority_emoji.get(priority, '📌')
+            
+            button_text = f"{emoji_status} {emoji_priority} {title[:25]}"
+            buttons.append([
+                InlineKeyboardButton(
+                    text=button_text,
+                    callback_data=f"task_{task_id}"
+                )
+            ])
+        
+        # Кнопка назад
+        buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        await callback.message.edit_text(
+            "📋 <b>Выберите задачу:</b>",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+        await callback.answer()
     
     finally:
         cur.close()
         conn.close()
 
 
-@dp.message(Command('all_tasks', 'все_задачи'))
-async def cmd_all_tasks(message: Message):
-    """Обработка команды /all_tasks"""
-    telegram_id = str(message.from_user.id)
-    username = message.from_user.username or message.from_user.first_name
-    first_name = message.from_user.first_name or ''
+@dp.callback_query(F.data == "all_tasks")
+async def callback_all_tasks(callback: CallbackQuery):
+    """Обработка кнопки Все задачи"""
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username or callback.from_user.first_name
+    first_name = callback.from_user.first_name or ''
     
     user = get_or_create_user(telegram_id, username, first_name)
     
     if user['role'] != 'admin':
-        await message.answer("❌ Только администраторы могут просматривать все задачи.")
+        await callback.answer("❌ Только администраторы могут просматривать все задачи.", show_alert=True)
         return
     
     conn = get_db_connection()
@@ -192,54 +302,73 @@ async def cmd_all_tasks(message: Message):
     
     try:
         cur.execute(
-            """SELECT t.id, t.title, t.status, t.priority, u.id 
+            """SELECT t.id, t.title, t.status, t.priority, u.username
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
-               ORDER BY t.created_at DESC"""
+               ORDER BY t.created_at DESC
+               LIMIT 20"""
         )
         tasks = cur.fetchall()
         
         if not tasks:
-            await message.answer("📋 В системе пока нет задач.")
+            await callback.message.edit_text(
+                "📋 В системе пока нет задач.",
+                reply_markup=get_main_keyboard(user['role'])
+            )
+            await callback.answer()
             return
         
-        text = f"📋 <b>Все задачи ({len(tasks)}):</b>\n\n"
+        # Создаём кнопки для каждой задачи
+        buttons = []
         
-        for task in tasks:
-            task_id, title, status, priority, assigned_user_id = task
-            text += f"""📌 <b>ID {task_id}:</b> {title}
-   Статус: {status}
-   Приоритет: {priority}
-   Назначена: User #{assigned_user_id}
-
-"""
+        status_emoji = {
+            'pending': '⏳',
+            'in_progress': '🔄',
+            'completed': '✅',
+            'rejected': '❌'
+        }
         
-        await message.answer(text.strip(), parse_mode='HTML')
+        priority_emoji = {
+            'urgent': '🔴',
+            'high': '🟠',
+            'medium': '🟡',
+            'low': '🟢'
+        }
+        
+        for task in tasks[:10]:
+            task_id, title, status, priority, assigned_username = task
+            emoji_status = status_emoji.get(status, '📌')
+            emoji_priority = priority_emoji.get(priority, '📌')
+            
+            button_text = f"{emoji_status} {emoji_priority} {title[:20]}"
+            buttons.append([
+                InlineKeyboardButton(
+                    text=button_text,
+                    callback_data=f"task_{task_id}"
+                )
+            ])
+        
+        # Кнопка назад
+        buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        await callback.message.edit_text(
+            f"📋 <b>Все задачи в системе ({len(tasks)}):</b>",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+        await callback.answer()
     
     finally:
         cur.close()
         conn.close()
 
 
-@dp.message(Command('task_details', 'детали_задачи'))
-async def cmd_task_details(message: Message):
-    """Обработка команды /task_details"""
-    telegram_id = str(message.from_user.id)
-    username = message.from_user.username or message.from_user.first_name
-    first_name = message.from_user.first_name or ''
-    
-    user = get_or_create_user(telegram_id, username, first_name)
-    
-    parts = message.text.split()
-    if len(parts) < 2:
-        await message.answer("❌ Укажите ID задачи: /task_details 5")
-        return
-    
-    try:
-        task_id = int(parts[1])
-    except ValueError:
-        await message.answer("❌ ID задачи должен быть числом.")
-        return
+@dp.callback_query(F.data.startswith("task_"))
+async def callback_task_details(callback: CallbackQuery):
+    """Показать детали задачи"""
+    task_id = int(callback.data.split('_')[1])
     
     conn = get_db_connection()
     cur = conn.cursor()
@@ -247,74 +376,76 @@ async def cmd_task_details(message: Message):
     try:
         cur.execute(
             """SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, 
-                      t.assigned_to_id, t.created_at
+                      u.username, t.created_at
                FROM tasks t
+               LEFT JOIN users u ON t.assigned_to_id = u.id
                WHERE t.id = %s""",
             (task_id,)
         )
         task = cur.fetchone()
         
         if not task:
-            await message.answer(f"❌ Задача #{task_id} не найдена.")
+            await callback.answer("❌ Задача не найдена.", show_alert=True)
             return
         
-        text = f"""📋 <b>Детали задачи #{task[0]}</b>
-
-<b>Название:</b> {task[1]}
-<b>Описание:</b> {task[2] or 'Нет описания'}
-<b>Статус:</b> {task[3]}
-<b>Приоритет:</b> {task[4]}
-<b>Срок:</b> {task[5]}
-<b>Назначена:</b> User #{task[6]}
-<b>Создана:</b> {task[7].strftime('%Y-%m-%d %H:%M')}"""
+        tid, title, description, status, priority, due_date, assigned_username, created_at = task
         
-        await message.answer(text, parse_mode='HTML')
+        status_text = {
+            'pending': '⏳ Ожидает',
+            'in_progress': '🔄 В работе',
+            'completed': '✅ Завершена',
+            'rejected': '❌ Отклонена'
+        }.get(status, status)
+        
+        priority_text = {
+            'urgent': '🔴 Срочно',
+            'high': '🟠 Высокий',
+            'medium': '🟡 Средний',
+            'low': '🟢 Низкий'
+        }.get(priority, priority)
+        
+        text = f"""📋 <b>Задача #{tid}</b>
+
+<b>Название:</b> {title}
+<b>Описание:</b> {description or 'Нет описания'}
+<b>Статус:</b> {status_text}
+<b>Приоритет:</b> {priority_text}
+<b>Срок:</b> {due_date}
+<b>Назначена:</b> {assigned_username or 'Не назначена'}
+<b>Создана:</b> {created_at.strftime('%Y-%m-%d %H:%M')}
+
+Выберите новый статус:"""
+        
+        await callback.message.edit_text(
+            text,
+            parse_mode='HTML',
+            reply_markup=get_task_keyboard(task_id, status)
+        )
+        await callback.answer()
     
     finally:
         cur.close()
         conn.close()
 
 
-@dp.message(Command('update_status', 'обновить_статус'))
-async def cmd_update_status(message: Message):
-    """Обработка команды /update_status"""
-    telegram_id = str(message.from_user.id)
-    username = message.from_user.username or message.from_user.first_name
-    first_name = message.from_user.first_name or ''
+@dp.callback_query(F.data.startswith("status_"))
+async def callback_update_status(callback: CallbackQuery):
+    """Обновить статус задачи"""
+    parts = callback.data.split('_')
+    task_id = int(parts[1])
+    new_status = parts[2]
+    
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username or callback.from_user.first_name
+    first_name = callback.from_user.first_name or ''
     
     user = get_or_create_user(telegram_id, username, first_name)
-    
-    parts = message.text.split()
-    if len(parts) < 3:
-        text = """❌ Неверный формат команды.
-
-<b>Использование:</b>
-/update_status &lt;ID&gt; &lt;статус&gt;
-
-<b>Статусы:</b> pending, in_progress, completed, rejected
-
-<b>Пример:</b>
-/update_status 5 in_progress"""
-        await message.answer(text, parse_mode='HTML')
-        return
-    
-    try:
-        task_id = int(parts[1])
-    except ValueError:
-        await message.answer("❌ ID задачи должен быть числом.")
-        return
-    
-    new_status = parts[2]
-    valid_statuses = ['pending', 'in_progress', 'completed', 'rejected']
-    
-    if new_status not in valid_statuses:
-        await message.answer(f"❌ Некорректный статус. Доступны: {', '.join(valid_statuses)}")
-        return
     
     conn = get_db_connection()
     cur = conn.cursor()
     
     try:
+        # Проверяем права доступа
         cur.execute(
             "SELECT assigned_to_id FROM tasks WHERE id = %s",
             (task_id,)
@@ -322,155 +453,220 @@ async def cmd_update_status(message: Message):
         task = cur.fetchone()
         
         if not task:
-            await message.answer(f"❌ Задача #{task_id} не найдена.")
+            await callback.answer("❌ Задача не найдена.", show_alert=True)
             return
         
         if task[0] != user['id'] and user['role'] != 'admin':
-            await message.answer("❌ Вы можете обновлять только свои задачи.")
+            await callback.answer("❌ Вы можете обновлять только свои задачи.", show_alert=True)
             return
         
+        # Обновляем статус
         cur.execute(
             "UPDATE tasks SET status = %s, updated_at = NOW() WHERE id = %s",
             (new_status, task_id)
         )
         conn.commit()
         
-        await message.answer(f"✅ Статус задачи #{task_id} обновлён на: <b>{new_status}</b>", parse_mode='HTML')
+        status_text = {
+            'pending': '⏳ Ожидает',
+            'in_progress': '🔄 В работе',
+            'completed': '✅ Завершена',
+            'rejected': '❌ Отклонена'
+        }.get(new_status, new_status)
+        
+        await callback.answer(f"✅ Статус обновлён на: {status_text}", show_alert=True)
+        
+        # Обновляем сообщение с деталями задачи
+        await callback_task_details(callback)
     
     except Exception as e:
-        conn.rollback()
         logger.error(f"Error updating status: {e}")
-        await message.answer(f"❌ Ошибка при обновлении статуса: {str(e)}")
+        await callback.answer(f"❌ Ошибка при обновлении статуса", show_alert=True)
     finally:
         cur.close()
         conn.close()
 
 
-@dp.message(Command('create_task', 'создать_задачу'))
-async def cmd_create_task(message: Message):
-    """Обработка команды /create_task"""
-    telegram_id = str(message.from_user.id)
-    username = message.from_user.username or message.from_user.first_name
-    first_name = message.from_user.first_name or ''
+@dp.callback_query(F.data == "create_task")
+async def callback_create_task(callback: CallbackQuery, state: FSMContext):
+    """Начать создание задачи"""
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username or callback.from_user.first_name
+    first_name = callback.from_user.first_name or ''
     
     user = get_or_create_user(telegram_id, username, first_name)
     
     if user['role'] != 'admin':
-        await message.answer("❌ Только администраторы могут создавать задачи.")
+        await callback.answer("❌ Только администраторы могут создавать задачи.", show_alert=True)
         return
     
-    text = message.text
+    await state.set_state(CreateTaskStates.waiting_for_title)
     
-    if len(text.split()) < 2:
-        help_text = """❌ Необходимо указать параметры задачи.
+    cancel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+    ])
+    
+    await callback.message.edit_text(
+        "➕ <b>Создание задачи</b>\n\n"
+        "Введите <b>название задачи</b>:",
+        parse_mode='HTML',
+        reply_markup=cancel_keyboard
+    )
+    await callback.answer()
 
-<b>Использование:</b>
-/create_task title:"название" description:"описание" priority:high due_date:2025-12-25 assigned_to:telegram_id
 
-<b>Пример:</b>
-/create_task title:"Подготовить отчет" priority:high"""
-        await message.answer(help_text, parse_mode='HTML')
-        return
+@dp.message(CreateTaskStates.waiting_for_title)
+async def process_task_title(message: Message, state: FSMContext):
+    """Получить название задачи"""
+    await state.update_data(title=message.text)
+    await state.set_state(CreateTaskStates.waiting_for_description)
     
-    import re
-    params = {}
+    skip_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⏭ Пропустить", callback_data="skip_description")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+    ])
     
-    title_match = re.search(r'title:"([^"]*)"', text)
-    if title_match:
-        params['title'] = title_match.group(1)
+    await message.answer(
+        "Введите <b>описание задачи</b> (или нажмите Пропустить):",
+        parse_mode='HTML',
+        reply_markup=skip_keyboard
+    )
+
+
+@dp.callback_query(F.data == "skip_description", CreateTaskStates.waiting_for_description)
+async def skip_description(callback: CallbackQuery, state: FSMContext):
+    """Пропустить описание"""
+    await state.update_data(description="")
+    await state.set_state(CreateTaskStates.waiting_for_priority)
     
-    desc_match = re.search(r'description:"([^"]*)"', text)
-    if desc_match:
-        params['description'] = desc_match.group(1)
+    await callback.message.edit_text(
+        "Выберите <b>приоритет задачи</b>:",
+        parse_mode='HTML',
+        reply_markup=get_priority_keyboard()
+    )
+    await callback.answer()
+
+
+@dp.message(CreateTaskStates.waiting_for_description)
+async def process_task_description(message: Message, state: FSMContext):
+    """Получить описание задачи"""
+    await state.update_data(description=message.text)
+    await state.set_state(CreateTaskStates.waiting_for_priority)
     
-    priority_match = re.search(r'priority:(\w+)', text)
-    if priority_match:
-        params['priority'] = priority_match.group(1)
+    await message.answer(
+        "Выберите <b>приоритет задачи</b>:",
+        parse_mode='HTML',
+        reply_markup=get_priority_keyboard()
+    )
+
+
+@dp.callback_query(F.data.startswith("priority_"))
+async def process_priority(callback: CallbackQuery, state: FSMContext):
+    """Обработать выбор приоритета"""
+    priority = callback.data.split('_')[1]
     
-    due_date_match = re.search(r'due_date:(\d{4}-\d{2}-\d{2})', text)
-    if due_date_match:
-        params['due_date'] = due_date_match.group(1)
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username or callback.from_user.first_name
+    first_name = callback.from_user.first_name or ''
     
-    assigned_to_match = re.search(r'assigned_to:([^\s]+)', text)
-    if assigned_to_match:
-        params['assigned_to'] = assigned_to_match.group(1)
+    user = get_or_create_user(telegram_id, username, first_name)
     
-    if not params.get('title'):
-        await message.answer('❌ Необходимо указать название задачи (title:"...")')
-        return
+    # Получаем данные задачи
+    data = await state.get_data()
+    title = data.get('title', '')
+    description = data.get('description', '')
     
+    # Создаём задачу
     conn = get_db_connection()
     cur = conn.cursor()
     
     try:
-        assigned_to_id = user['id']
-        assigned_info = "вам"
-        
-        if params.get('assigned_to'):
-            assigned_telegram_id = params['assigned_to']
-            
-            if not assigned_telegram_id.isdigit():
-                await message.answer(f"❌ Некорректный Telegram ID: {assigned_telegram_id}. Telegram ID должен содержать только цифры.")
-                return
-            
-            logger.info(f"[create_task] Looking up user with Telegram ID: {assigned_telegram_id}")
-            
-            cur.execute(
-                "SELECT id, username FROM users WHERE telegram_id = %s",
-                (assigned_telegram_id,)
-            )
-            assigned_user = cur.fetchone()
-            
-            if not assigned_user:
-                logger.info(f"[create_task] User not found: {assigned_telegram_id}")
-                await message.answer(f"❌ Пользователь с Telegram ID {assigned_telegram_id} не найден. Пользователь должен сначала отправить /start боту.")
-                return
-            
-            assigned_to_id = assigned_user[0]
-            assigned_info = f"User #{assigned_user[0]} (Telegram ID: {assigned_telegram_id})"
-            logger.info(f"[create_task] Found user #{assigned_user[0]} for Telegram ID: {assigned_telegram_id}")
-        
         cur.execute(
             """INSERT INTO tasks 
                (title, description, priority, status, due_date, assigned_to_id, created_by_id, created_at, updated_at)
                VALUES (%s, %s, %s, 'pending', %s, %s, %s, NOW(), NOW())
                RETURNING id, title, priority, status""",
             (
-                params['title'],
-                params.get('description', ''),
-                params.get('priority', 'medium'),
-                params.get('due_date', datetime.now().strftime('%Y-%m-%d')),
-                assigned_to_id,
+                title,
+                description,
+                priority,
+                (datetime.now() + __import__('datetime').timedelta(days=7)).strftime('%Y-%m-%d'),
+                user['id'],
                 user['id']
             )
         )
         conn.commit()
         task = cur.fetchone()
         
-        logger.info(f"[create_task] Task #{task[0]} created and assigned to user #{assigned_to_id}")
+        priority_text = {
+            'urgent': '🔴 Срочно',
+            'high': '🟠 Высокий',
+            'medium': '🟡 Средний',
+            'low': '🟢 Низкий'
+        }.get(priority, priority)
         
-        result_text = f"""✅ <b>Задача создана успешно!</b>
-
-ID: {task[0]}
-Название: {task[1]}
-Приоритет: {task[2]}
-Статус: {task[3]}
-Назначена: {assigned_info}"""
-        
-        await message.answer(result_text, parse_mode='HTML')
+        await callback.message.edit_text(
+            f"✅ <b>Задача создана успешно!</b>\n\n"
+            f"ID: {task[0]}\n"
+            f"Название: {task[1]}\n"
+            f"Приоритет: {priority_text}\n"
+            f"Статус: ⏳ Ожидает",
+            parse_mode='HTML',
+            reply_markup=get_main_keyboard(user['role'])
+        )
+        await callback.answer()
+        await state.clear()
     
     except Exception as e:
-        conn.rollback()
         logger.error(f"Error creating task: {e}")
-        await message.answer(f"❌ Ошибка при создании задачи: {str(e)}")
+        await callback.answer("❌ Ошибка при создании задачи", show_alert=True)
     finally:
         cur.close()
         conn.close()
 
 
+@dp.callback_query(F.data == "cancel")
+async def callback_cancel(callback: CallbackQuery, state: FSMContext):
+    """Отмена текущей операции"""
+    await state.clear()
+    
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username or callback.from_user.first_name
+    first_name = callback.from_user.first_name or ''
+    
+    user = get_or_create_user(telegram_id, username, first_name)
+    
+    await callback.message.edit_text(
+        "❌ Операция отменена.\n\nВыберите действие:",
+        reply_markup=get_main_keyboard(user['role'])
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "back_to_main")
+async def callback_back_to_main(callback: CallbackQuery):
+    """Вернуться в главное меню"""
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username or callback.from_user.first_name
+    first_name = callback.from_user.first_name or ''
+    
+    user = get_or_create_user(telegram_id, username, first_name)
+    
+    role_text = "👨‍💼 Администратор" if user['role'] == 'admin' else "👤 Сотрудник"
+    
+    await callback.message.edit_text(
+        f"👋 Привет, {user['username']}!\n\n"
+        f"Роль: <b>{role_text}</b>\n\n"
+        f"Выберите действие:",
+        parse_mode='HTML',
+        reply_markup=get_main_keyboard(user['role'])
+    )
+    await callback.answer()
+
+
 async def main():
     """Запуск бота"""
-    logger.info("🤖 Starting bot...")
+    logger.info("🤖 Starting bot with inline keyboards...")
     
     try:
         await dp.start_polling(bot, skip_updates=True)
