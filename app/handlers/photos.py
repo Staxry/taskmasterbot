@@ -105,7 +105,7 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
             
             logger.info(f"✅ Task #{task_id} completed with status {new_status}")
             
-            if created_by_id and creator_telegram_id and creator_telegram_id != telegram_id:
+            if created_by_id and creator_telegram_id:
                 try:
                     if new_status == 'completed':
                         notification_text = f"""✅ <b>Задача завершена!</b>
@@ -229,7 +229,7 @@ async def process_completion_photo(message: Message, state: FSMContext):
             
             logger.info(f"✅ Task #{task_id} completed with status {new_status} and photo")
             
-            if created_by_id and creator_telegram_id and creator_telegram_id != telegram_id:
+            if created_by_id and creator_telegram_id:
                 try:
                     if new_status == 'completed':
                         caption = f"""✅ <b>Задача завершена!</b>
