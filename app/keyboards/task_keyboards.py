@@ -165,9 +165,14 @@ def get_due_time_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🌃 20:00", callback_data="time_20:00")
     ])
     
+    buttons.append([
+        InlineKeyboardButton(text="🌃 21:00", callback_data="time_21:00"),
+        InlineKeyboardButton(text="🌃 22:00", callback_data="time_22:00"),
+        InlineKeyboardButton(text="🌙 23:59 (конец дня)", callback_data="time_23:59")
+    ])
+    
     # Специальные опции
     buttons.append([
-        InlineKeyboardButton(text="🌙 23:59 (конец дня)", callback_data="time_23:59"),
         InlineKeyboardButton(text="✍️ Ввод вручную", callback_data="time_manual")
     ])
     

@@ -13,7 +13,7 @@ from app.services.users import get_or_create_user
 from app.keyboards.main_menu import get_main_keyboard
 from app.states import CompleteTaskStates, CreateTaskStates
 from app.logging_config import get_logger
-from app.config import get_now, combine_datetime
+from app.config import get_now, combine_datetime, TIMEZONE
 
 logger = get_logger(__name__)
 
@@ -119,13 +119,17 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
             
             if created_by_id and creator_telegram_id:
                 try:
+                    # Форматируем дату с учётом часового пояса
+                    due_date_aware = due_date if due_date.tzinfo else TIMEZONE.localize(due_date)
+                    due_date_str = due_date_aware.strftime('%d.%m.%Y %H:%M')
+                    
                     if new_status == 'completed':
                         notification_text = f"""✅ <b>Задача завершена!</b>
 
 <b>Задача #{task_id}</b>
 <b>Название:</b> {title}
 <b>Приоритет:</b> {priority_text}
-<b>Срок был:</b> 📅 {due_date}
+<b>Срок был:</b> 📅 {due_date_str} (МСК)
 
 <b>Исполнитель:</b> @{username}
 <b>Комментарий:</b> {comment}
@@ -137,7 +141,7 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
 <b>Задача #{task_id}</b>
 <b>Название:</b> {title}
 <b>Приоритет:</b> {priority_text}
-<b>Срок:</b> 📅 {due_datetime.strftime('%d.%m.%Y %H:%M')} (МСК)
+<b>Срок:</b> 📅 {due_date_str} (МСК)
 
 <b>Исполнитель:</b> @{username}
 <b>Отчёт о прогрессе:</b> {comment}
@@ -243,13 +247,17 @@ async def process_completion_photo(message: Message, state: FSMContext):
             
             if created_by_id and creator_telegram_id:
                 try:
+                    # Форматируем дату с учётом часового пояса
+                    due_date_aware = due_date if due_date.tzinfo else TIMEZONE.localize(due_date)
+                    due_date_str = due_date_aware.strftime('%d.%m.%Y %H:%M')
+                    
                     if new_status == 'completed':
                         caption = f"""✅ <b>Задача завершена!</b>
 
 <b>Задача #{task_id}</b>
 <b>Название:</b> {title}
 <b>Приоритет:</b> {priority_text}
-<b>Срок был:</b> 📅 {due_date}
+<b>Срок был:</b> 📅 {due_date_str} (МСК)
 
 <b>Исполнитель:</b> @{username}
 <b>Комментарий:</b> {comment}
@@ -261,7 +269,7 @@ async def process_completion_photo(message: Message, state: FSMContext):
 <b>Задача #{task_id}</b>
 <b>Название:</b> {title}
 <b>Приоритет:</b> {priority_text}
-<b>Срок:</b> 📅 {due_datetime.strftime('%d.%m.%Y %H:%M')} (МСК)
+<b>Срок:</b> 📅 {due_date_str} (МСК)
 
 <b>Исполнитель:</b> @{username}
 <b>Отчёт о прогрессе:</b> {comment}
