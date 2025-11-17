@@ -144,8 +144,12 @@ def get_main_keyboard(role: str):
         buttons.append([InlineKeyboardButton(text="➕ Создать задачу", callback_data="create_task")])
         buttons.append([InlineKeyboardButton(text="🗑️ Удалить задачу", callback_data="delete_task_menu")])
         buttons.append([
-            InlineKeyboardButton(text="👨‍💼 Добавить админа", callback_data="add_admin"),
-            InlineKeyboardButton(text="👤 Добавить сотрудника", callback_data="add_employee")
+            InlineKeyboardButton(text="➕👨‍💼 Добавить админа", callback_data="add_admin"),
+            InlineKeyboardButton(text="➕👤 Добавить сотрудника", callback_data="add_employee")
+        ])
+        buttons.append([
+            InlineKeyboardButton(text="🗑️👨‍💼 Удалить админа", callback_data="remove_admin"),
+            InlineKeyboardButton(text="🗑️👤 Удалить сотрудника", callback_data="remove_employee")
         ])
     
     buttons.append([InlineKeyboardButton(text="❓ Помощь", callback_data="help")])
@@ -153,9 +157,15 @@ def get_main_keyboard(role: str):
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_task_keyboard(task_id: int, current_status: str):
+def get_task_keyboard(task_id: int, current_status: str, assigned_to_id: int = None, user_id: int = None, is_admin: bool = False):
     """Клавиатура для работы с задачей"""
     buttons = []
+    
+    # Если задача не назначена и пользователь не админ - показываем кнопку "Взять в работу"
+    if assigned_to_id is None and not is_admin:
+        buttons.append([InlineKeyboardButton(text="✋ Взять в работу", callback_data=f"take_{task_id}")])
+        buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="my_tasks")])
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
     
     statuses = {
         'pending': '⏳ Ожидает',
@@ -461,14 +471,27 @@ async def callback_my_tasks(callback: CallbackQuery):
     cur = conn.cursor()
     
     try:
-        cur.execute(
-            """SELECT id, title, status, priority, due_date 
-               FROM tasks 
-               WHERE assigned_to_id = %s 
-               ORDER BY created_at DESC
-               LIMIT 20""",
-            (user['id'],)
-        )
+        # Сотрудники видят:
+        # 1. Задачи назначенные им (assigned_to_id = user.id)
+        # 2. Задачи без исполнителя (assigned_to_id IS NULL)
+        if user['role'] == 'admin':
+            # Админы видят все задачи
+            cur.execute(
+                """SELECT id, title, status, priority, due_date, assigned_to_id
+                   FROM tasks 
+                   ORDER BY created_at DESC
+                   LIMIT 20"""
+            )
+        else:
+            # Сотрудники видят свои задачи + неназначенные
+            cur.execute(
+                """SELECT id, title, status, priority, due_date, assigned_to_id
+                   FROM tasks 
+                   WHERE assigned_to_id = %s OR assigned_to_id IS NULL
+                   ORDER BY created_at DESC
+                   LIMIT 20""",
+                (user['id'],)
+            )
         tasks = cur.fetchall()
         
         if not tasks:
@@ -497,11 +520,16 @@ async def callback_my_tasks(callback: CallbackQuery):
         }
         
         for task in tasks[:10]:
-            task_id, title, status, priority, due_date = task
+            task_id, title, status, priority, due_date, assigned_to_id = task
             emoji_status = status_emoji.get(status, '📌')
             emoji_priority = priority_emoji.get(priority, '📌')
             
-            button_text = f"{emoji_status} {emoji_priority} {title[:25]}"
+            # Добавляем индикатор если задача не назначена
+            if assigned_to_id is None:
+                button_text = f"🆓 {emoji_priority} {title[:20]}"
+            else:
+                button_text = f"{emoji_status} {emoji_priority} {title[:25]}"
+            
             buttons.append([
                 InlineKeyboardButton(
                     text=button_text,
@@ -613,13 +641,22 @@ async def callback_task_details(callback: CallbackQuery):
     """Показать детали задачи"""
     task_id = int(callback.data.split('_')[1])
     
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username
+    first_name = callback.from_user.first_name or ''
+    
+    user = get_or_create_user(telegram_id, username, first_name)
+    if not user:
+        await callback.answer("❌ Доступ запрещён", show_alert=True)
+        return
+    
     conn = get_db_connection()
     cur = conn.cursor()
     
     try:
         cur.execute(
             """SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, 
-                      u.username, t.created_at
+                      u.username, t.created_at, t.assigned_to_id
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
                WHERE t.id = %s""",
@@ -631,7 +668,7 @@ async def callback_task_details(callback: CallbackQuery):
             await callback.answer("❌ Задача не найдена.", show_alert=True)
             return
         
-        tid, title, description, status, priority, due_date, assigned_username, created_at = task
+        tid, title, description, status, priority, due_date, assigned_username, created_at, assigned_to_id = task
         
         status_text = {
             'pending': '⏳ Ожидает',
@@ -655,15 +692,20 @@ async def callback_task_details(callback: CallbackQuery):
 <b>Статус:</b> {status_text}
 <b>Приоритет:</b> {priority_text}
 <b>Срок:</b> {due_date}
-<b>Назначена:</b> @{assigned_username or 'Не назначена'}
+<b>Назначена:</b> @{assigned_username or '🆓 Свободна (можно взять)'}
 <b>Создана:</b> {created_at.strftime('%Y-%m-%d %H:%M')}
-
-Выберите новый статус:"""
+"""
+        
+        # Добавляем подсказку для неназначенных задач
+        if assigned_to_id is None:
+            text += "\n💡 Эта задача свободна - любой сотрудник может взять её в работу!"
+        else:
+            text += "\nВыберите новый статус:"
         
         await callback.message.edit_text(
             text,
             parse_mode='HTML',
-            reply_markup=get_task_keyboard(task_id, status)
+            reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
         )
         await callback.answer()
     
@@ -803,6 +845,103 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"Error updating status: {e}", exc_info=True)
         await callback.answer(f"❌ Ошибка при обновлении статуса: {str(e)}", show_alert=True)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@dp.callback_query(F.data.startswith("take_"))
+async def callback_take_task(callback: CallbackQuery):
+    """Взять задачу в работу"""
+    task_id = int(callback.data.split('_')[1])
+    
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username
+    first_name = callback.from_user.first_name or ''
+    
+    user = get_or_create_user(telegram_id, username, first_name)
+    if not user:
+        await callback.answer("❌ Доступ запрещён", show_alert=True)
+        return
+    
+    if user['role'] == 'admin':
+        await callback.answer("❌ Админы не могут брать задачи в работу. Используйте назначение через создание задачи.", show_alert=True)
+        return
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Проверяем что задача действительно не назначена
+        cur.execute(
+            "SELECT id, title, assigned_to_id, created_by_id FROM tasks WHERE id = %s",
+            (task_id,)
+        )
+        task = cur.fetchone()
+        
+        if not task:
+            await callback.answer("❌ Задача не найдена.", show_alert=True)
+            return
+        
+        task_id_db, title, assigned_to_id, created_by_id = task
+        
+        if assigned_to_id is not None:
+            await callback.answer("❌ Эта задача уже назначена другому сотруднику.", show_alert=True)
+            return
+        
+        # Назначаем задачу пользователю и ставим статус "В работе"
+        cur.execute(
+            "UPDATE tasks SET assigned_to_id = %s, status = 'in_progress', updated_at = NOW() WHERE id = %s",
+            (user['id'], task_id)
+        )
+        conn.commit()
+        
+        await callback.answer("✅ Задача взята в работу!", show_alert=True)
+        
+        # Отправляем уведомление админу (создателю)
+        if created_by_id:
+            cur.execute(
+                "SELECT telegram_id, username FROM users WHERE id = %s",
+                (created_by_id,)
+            )
+            creator = cur.fetchone()
+            
+            if creator:
+                creator_telegram_id, creator_username = creator
+                try:
+                    await bot.send_message(
+                        chat_id=creator_telegram_id,
+                        text=f"""✋ <b>Задачу взяли в работу!</b>
+
+<b>Задача:</b> {title}
+<b>Исполнитель:</b> @{username}
+<b>Статус:</b> 🔄 В работе
+
+Используйте /start для просмотра.""",
+                        parse_mode='HTML'
+                    )
+                    logger.info(f"✅ Task assignment notification sent to {creator_username}")
+                except Exception as notif_error:
+                    logger.warning(f"⚠️ Could not send notification: {notif_error}")
+        
+        # Обновляем отображение задачи
+        await callback.message.edit_text(
+            f"✅ <b>Задача взята в работу!</b>\n\n"
+            f"Задача: {title}\n"
+            f"Теперь она назначена на вас.\n\n"
+            f"Используйте 📋 Мои задачи для просмотра.",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📋 Мои задачи", callback_data="my_tasks")],
+                [InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")]
+            ])
+        )
+        
+        logger.info(f"✅ {username} took task #{task_id} in progress")
+    
+    except Exception as e:
+        logger.error(f"Error taking task: {e}", exc_info=True)
+        await callback.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
     finally:
         cur.close()
         conn.close()
@@ -1500,6 +1639,197 @@ async def callback_back_to_main(callback: CallbackQuery):
         reply_markup=get_main_keyboard(user['role'])
     )
     await callback.answer()
+
+
+@dp.callback_query(F.data == "remove_admin")
+async def callback_remove_admin(callback: CallbackQuery):
+    """Показать список админов для удаления"""
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username
+    first_name = callback.from_user.first_name or ''
+    
+    user = get_or_create_user(telegram_id, username, first_name)
+    if not user:
+        await callback.answer("❌ Доступ запрещён", show_alert=True)
+        return
+    
+    if user['role'] != 'admin':
+        await callback.answer("❌ Только администраторы могут удалять пользователей.", show_alert=True)
+        return
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        cur.execute(
+            "SELECT id, username FROM users WHERE role = 'admin' AND telegram_id != %s ORDER BY username",
+            (telegram_id,)
+        )
+        admins = cur.fetchall()
+        
+        if not admins:
+            await callback.message.edit_text(
+                "👨‍💼 <b>Нет других администраторов для удаления</b>",
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")]
+                ])
+            )
+            await callback.answer()
+            return
+        
+        buttons = []
+        for admin_id, admin_username in admins:
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"🗑️ @{admin_username}",
+                    callback_data=f"confirmremove_{admin_id}_admin"
+                )
+            ])
+        
+        buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")])
+        
+        await callback.message.edit_text(
+            "👨‍💼 <b>Выберите администратора для удаления:</b>",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+        await callback.answer()
+    
+    finally:
+        cur.close()
+        conn.close()
+
+
+@dp.callback_query(F.data == "remove_employee")
+async def callback_remove_employee(callback: CallbackQuery):
+    """Показать список сотрудников для удаления"""
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username
+    first_name = callback.from_user.first_name or ''
+    
+    user = get_or_create_user(telegram_id, username, first_name)
+    if not user:
+        await callback.answer("❌ Доступ запрещён", show_alert=True)
+        return
+    
+    if user['role'] != 'admin':
+        await callback.answer("❌ Только администраторы могут удалять пользователей.", show_alert=True)
+        return
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        cur.execute(
+            "SELECT id, username FROM users WHERE role = 'employee' ORDER BY username"
+        )
+        employees = cur.fetchall()
+        
+        if not employees:
+            await callback.message.edit_text(
+                "👤 <b>Нет сотрудников для удаления</b>",
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")]
+                ])
+            )
+            await callback.answer()
+            return
+        
+        buttons = []
+        for emp_id, emp_username in employees:
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"🗑️ @{emp_username}",
+                    callback_data=f"confirmremove_{emp_id}_employee"
+                )
+            ])
+        
+        buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")])
+        
+        await callback.message.edit_text(
+            "👤 <b>Выберите сотрудника для удаления:</b>",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+        await callback.answer()
+    
+    finally:
+        cur.close()
+        conn.close()
+
+
+@dp.callback_query(F.data.startswith("confirmremove_"))
+async def callback_confirm_remove_user(callback: CallbackQuery):
+    """Подтверждение удаления пользователя"""
+    parts = callback.data.split('_')
+    user_id_to_remove = int(parts[1])
+    user_type = parts[2]
+    
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username
+    first_name = callback.from_user.first_name or ''
+    
+    user = get_or_create_user(telegram_id, username, first_name)
+    if not user:
+        await callback.answer("❌ Доступ запрещён", show_alert=True)
+        return
+    
+    if user['role'] != 'admin':
+        await callback.answer("❌ Только администраторы могут удалять пользователей.", show_alert=True)
+        return
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Получаем информацию о пользователе
+        cur.execute(
+            "SELECT username, role FROM users WHERE id = %s",
+            (user_id_to_remove,)
+        )
+        user_to_remove = cur.fetchone()
+        
+        if not user_to_remove:
+            await callback.answer("❌ Пользователь не найден.", show_alert=True)
+            return
+        
+        username_to_remove, role_to_remove = user_to_remove
+        
+        # Удаляем пользователя из таблицы users
+        cur.execute("DELETE FROM users WHERE id = %s", (user_id_to_remove,))
+        
+        # Удаляем из allowed_users
+        cur.execute("DELETE FROM allowed_users WHERE username = %s", (username_to_remove,))
+        
+        # Снимаем назначение с задач
+        cur.execute("UPDATE tasks SET assigned_to_id = NULL WHERE assigned_to_id = %s", (user_id_to_remove,))
+        
+        conn.commit()
+        
+        role_text = "👨‍💼 Администратор" if role_to_remove == 'admin' else "👤 Сотрудник"
+        
+        await callback.message.edit_text(
+            f"✅ <b>Пользователь удалён!</b>\n\n"
+            f"Username: @{username_to_remove}\n"
+            f"Роль: {role_text}\n\n"
+            f"Задачи, которые были назначены на этого пользователя, теперь свободны.",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")]
+            ])
+        )
+        await callback.answer()
+        
+        logger.info(f"✅ Admin {username} removed user {username_to_remove} ({role_to_remove})")
+    
+    except Exception as e:
+        logger.error(f"Error removing user: {e}", exc_info=True)
+        await callback.answer(f"❌ Ошибка при удалении: {str(e)}", show_alert=True)
+    finally:
+        cur.close()
+        conn.close()
 
 
 @dp.message()
