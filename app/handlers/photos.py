@@ -130,6 +130,12 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
                     # Форматируем дату (SQLite возвращает строку)
                     due_date_str = due_date if due_date else 'не указан'
                     
+                    # Форматируем имя исполнителя
+                    if first_name or last_name:
+                        executor_display = f"{first_name or ''} {last_name or ''}".strip() + f" (@{username})"
+                    else:
+                        executor_display = f"@{username}"
+                    
                     if new_status == 'completed':
                         notification_text = f"""✅ <b>Задача завершена!</b>
 
@@ -138,7 +144,7 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
 <b>Приоритет:</b> {priority_text}
 <b>Срок был:</b> 📅 {due_date_str} (МСК)
 
-<b>Исполнитель:</b> @{username}
+<b>Исполнитель:</b> {executor_display}
 <b>Комментарий:</b> {comment}
 
 Нажмите кнопку ниже для просмотра задачи."""
@@ -150,7 +156,7 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
 <b>Приоритет:</b> {priority_text}
 <b>Срок:</b> 📅 {due_date_str} (МСК)
 
-<b>Исполнитель:</b> @{username}
+<b>Исполнитель:</b> {executor_display}
 <b>Отчёт о прогрессе:</b> {comment}
 
 Задача ещё в работе. Нажмите кнопку ниже для просмотра."""
@@ -265,6 +271,12 @@ async def process_completion_photo(message: Message, state: FSMContext):
                     # Форматируем дату (SQLite возвращает строку)
                     due_date_str = due_date if due_date else 'не указан'
                     
+                    # Форматируем имя исполнителя
+                    if first_name or last_name:
+                        executor_display = f"{first_name or ''} {last_name or ''}".strip() + f" (@{username})"
+                    else:
+                        executor_display = f"@{username}"
+                    
                     if new_status == 'completed':
                         caption = f"""✅ <b>Задача завершена!</b>
 
@@ -273,7 +285,7 @@ async def process_completion_photo(message: Message, state: FSMContext):
 <b>Приоритет:</b> {priority_text}
 <b>Срок был:</b> 📅 {due_date_str} (МСК)
 
-<b>Исполнитель:</b> @{username}
+<b>Исполнитель:</b> {executor_display}
 <b>Комментарий:</b> {comment}
 
 Нажмите кнопку ниже для просмотра задачи."""
@@ -285,7 +297,7 @@ async def process_completion_photo(message: Message, state: FSMContext):
 <b>Приоритет:</b> {priority_text}
 <b>Срок:</b> 📅 {due_date_str} (МСК)
 
-<b>Исполнитель:</b> @{username}
+<b>Исполнитель:</b> {executor_display}
 <b>Отчёт о прогрессе:</b> {comment}
 
 Задача ещё в работе. Нажмите кнопку ниже для просмотра."""
