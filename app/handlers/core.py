@@ -1274,7 +1274,9 @@ async def callback_remove_admin(callback: CallbackQuery):
             return
         
         buttons = []
-        for admin_id, admin_username in admins:
+        for admin in admins:
+            admin_id = admin['id']
+            admin_username = admin['username']
             buttons.append([
                 InlineKeyboardButton(
                     text=f"🗑️ @{admin_username}",

@@ -307,12 +307,18 @@ def generate_excel_report(report_type: str = 'full') -> io.BytesIO:
         
         completed_tasks = cur.fetchall()
         row_completed = 4
-        for username, task_id, title, priority, updated_at in completed_tasks:
+        for task in completed_tasks:
+            username = task['username']
+            task_id = task['id']
+            title = task['title']
+            priority = task['priority']
+            updated_at = task['updated_at']
+            
             ws_completed[f'A{row_completed}'] = username
             ws_completed[f'B{row_completed}'] = task_id
             ws_completed[f'C{row_completed}'] = title[:50]  # Ограничение длины
             ws_completed[f'D{row_completed}'] = priority
-            ws_completed[f'E{row_completed}'] = updated_at.strftime('%d.%m.%Y %H:%M') if updated_at else ''
+            ws_completed[f'E{row_completed}'] = updated_at if updated_at else ''
             row_completed += 1
         
         # Автоширина столбцов
@@ -363,12 +369,20 @@ def generate_excel_report(report_type: str = 'full') -> io.BytesIO:
         
         overdue_tasks = cur.fetchall()
         row_overdue = 4
-        for username, task_id, title, priority, due_date, status, days_overdue in overdue_tasks:
+        for task in overdue_tasks:
+            username = task['username']
+            task_id = task['id']
+            title = task['title']
+            priority = task['priority']
+            due_date = task['due_date']
+            status = task['status']
+            days_overdue = task['days_overdue']
+            
             ws_overdue[f'A{row_overdue}'] = username
             ws_overdue[f'B{row_overdue}'] = task_id
             ws_overdue[f'C{row_overdue}'] = title[:50]
             ws_overdue[f'D{row_overdue}'] = priority
-            ws_overdue[f'E{row_overdue}'] = due_date.strftime('%d.%m.%Y') if due_date else ''
+            ws_overdue[f'E{row_overdue}'] = due_date if due_date else ''
             ws_overdue[f'F{row_overdue}'] = status
             ws_overdue[f'G{row_overdue}'] = int(days_overdue) if days_overdue else 0
             

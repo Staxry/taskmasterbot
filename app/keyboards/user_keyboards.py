@@ -29,7 +29,10 @@ def get_users_keyboard() -> InlineKeyboardMarkup:
         
         buttons = []
         
-        for user_id, username, role in users:
+        for user in users:
+            user_id = user['id']
+            username = user['username']
+            role = user['role']
             role_emoji = "👨‍💼" if role == "admin" else "👤"
             buttons.append([
                 InlineKeyboardButton(
@@ -66,7 +69,7 @@ def get_remove_user_keyboard(role: str) -> InlineKeyboardMarkup:
     try:
         cur.execute(
             """SELECT username FROM allowed_users 
-               WHERE role = %s
+               WHERE role = ?
                ORDER BY username ASC""",
             (role,)
         )
@@ -81,7 +84,8 @@ def get_remove_user_keyboard(role: str) -> InlineKeyboardMarkup:
         
         buttons = []
         
-        for (username,) in users:
+        for user in users:
+            username = user['username']
             buttons.append([
                 InlineKeyboardButton(
                     text=f"🗑️ @{username}",
