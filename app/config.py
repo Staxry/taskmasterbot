@@ -2,13 +2,39 @@
 Configuration module for the Telegram bot
 """
 import os
+import sys
 from dotenv import load_dotenv
 import pytz
 
+# Загружаем переменные из .env файла
 load_dotenv()
 
 # Telegram Bot Token
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+
+# Валидация токена
+if not BOT_TOKEN:
+    print("\n" + "="*60)
+    print("❌ ОШИБКА: Токен бота не найден!")
+    print("="*60)
+    print("\nТокен не загружен из переменных окружения.")
+    print("\n📋 Варианты решения:")
+    print("\n1️⃣  Создайте файл .env в корне проекта:")
+    print("   cp .env.example .env")
+    print("   nano .env")
+    print("\n2️⃣  Добавьте в файл .env:")
+    print("   TELEGRAM_BOT_TOKEN=ваш_токен_без_кавычек")
+    print("\n3️⃣  Пример правильного формата .env:")
+    print("   TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz")
+    print("   DATABASE_PATH=data/task_bot.db")
+    print("   TIMEZONE=Europe/Kaliningrad")
+    print("\n⚠️  Важно:")
+    print("   - Файл .env должен быть в корне проекта (там же где bot.py)")
+    print("   - Токен без кавычек и пробелов")
+    print("   - После = сразу токен, без пробелов")
+    print("\n4️⃣  Получить токен можно у @BotFather в Telegram")
+    print("="*60 + "\n")
+    sys.exit(1)
 
 # Timezone Configuration
 # Установите нужный часовой пояс для вашего региона
