@@ -20,6 +20,8 @@ const processTelegramMessage = createStep({
   outputSchema: z.object({
     response: z.string(),
     success: z.boolean(),
+    chatId: z.string(),
+    botToken: z.string(),
   }),
 
   execute: async ({ inputData, mastra }) => {
@@ -28,6 +30,16 @@ const processTelegramMessage = createStep({
       telegramId: inputData.telegramId,
       messageLength: inputData.messageText.length,
     });
+
+    if (!inputData.chatId || !inputData.botToken) {
+      logger?.error('❌ [processTelegramMessage] Missing required parameters: chatId or botToken');
+      return {
+        response: 'Ошибка конфигурации: отсутствуют необходимые параметры',
+        success: false,
+        chatId: inputData.chatId || '',
+        botToken: inputData.botToken || '',
+      };
+    }
 
     const prompt = `
 Пользователь написал: "${inputData.messageText}"
@@ -44,20 +56,42 @@ Username: ${inputData.username || 'N/A'}
 5. Предоставьте четкий и полезный ответ на русском языке
 `;
 
-    const response = await telegramTaskAgent.generateLegacy(
-      [{ role: "user", content: prompt }],
-      {
-        resourceId: "telegram-bot",
-        threadId: inputData.threadId,
+    try {
+      const response = await telegramTaskAgent.generateLegacy(
+        [{ role: "user", content: prompt }],
+        {
+          resourceId: "telegram-bot",
+          threadId: inputData.threadId,
+        }
+      );
+
+      if (!response || !response.text) {
+        logger?.error('❌ [processTelegramMessage] Agent returned empty response');
+        return {
+          response: 'Извините, произошла ошибка при обработке вашего запроса.',
+          success: false,
+          chatId: inputData.chatId,
+          botToken: inputData.botToken,
+        };
       }
-    );
 
-    logger?.info('✅ [processTelegramMessage] Agent processing complete');
+      logger?.info('✅ [processTelegramMessage] Agent processing complete');
 
-    return {
-      response: response.text,
-      success: true,
-    };
+      return {
+        response: response.text,
+        success: true,
+        chatId: inputData.chatId,
+        botToken: inputData.botToken,
+      };
+    } catch (error) {
+      logger?.error('❌ [processTelegramMessage] Agent execution failed:', error);
+      return {
+        response: 'Извините, произошла ошибка при обработке вашего запроса. Попробуйте еще раз.',
+        success: false,
+        chatId: inputData.chatId,
+        botToken: inputData.botToken,
+      };
+    }
   },
 });
 
@@ -68,8 +102,8 @@ const sendTelegramResponse = createStep({
   inputSchema: z.object({
     response: z.string(),
     success: z.boolean(),
-    chatId: z.string().optional(),
-    botToken: z.string().optional(),
+    chatId: z.string(),
+    botToken: z.string(),
   }),
 
   outputSchema: z.object({
@@ -79,7 +113,10 @@ const sendTelegramResponse = createStep({
 
   execute: async ({ inputData, mastra }) => {
     const logger = mastra?.getLogger();
-    logger?.info('📤 [sendTelegramResponse] Sending response to Telegram');
+    logger?.info('📤 [sendTelegramResponse] Sending response to Telegram', {
+      success: inputData.success,
+      chatId: inputData.chatId,
+    });
 
     if (!inputData.chatId || !inputData.botToken) {
       logger?.error('❌ [sendTelegramResponse] Missing chatId or botToken');
@@ -87,6 +124,10 @@ const sendTelegramResponse = createStep({
         sent: false,
         message: 'Missing required parameters',
       };
+    }
+
+    if (!inputData.success) {
+      logger?.warn('⚠️ [sendTelegramResponse] Agent processing failed, but still sending error message to user');
     }
 
     try {
