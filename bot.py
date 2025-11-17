@@ -704,11 +704,23 @@ async def callback_task_details(callback: CallbackQuery):
         else:
             text += "\nВыберите новый статус:"
         
-        await callback.message.edit_text(
-            text,
-            parse_mode='HTML',
-            reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
-        )
+        # Проверяем, есть ли в сообщении фото или текст
+        try:
+            # Пытаемся отредактировать как текстовое сообщение
+            await callback.message.edit_text(
+                text,
+                parse_mode='HTML',
+                reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
+            )
+        except Exception:
+            # Если не получилось (например, сообщение с фото), удаляем и отправляем новое
+            await callback.message.delete()
+            await callback.message.answer(
+                text,
+                parse_mode='HTML',
+                reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
+            )
+        
         await callback.answer()
     
     finally:
