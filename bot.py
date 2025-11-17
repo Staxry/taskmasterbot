@@ -32,6 +32,7 @@ class CreateTaskStates(StatesGroup):
     waiting_for_title = State()
     waiting_for_description = State()
     waiting_for_priority = State()
+    waiting_for_due_date = State()
     waiting_for_assignee = State()
 
 
@@ -184,6 +185,28 @@ def get_priority_keyboard():
         [
             InlineKeyboardButton(text="🟡 Средний", callback_data="priority_medium"),
             InlineKeyboardButton(text="🟢 Низкий", callback_data="priority_low")
+        ],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_due_date_keyboard():
+    """Клавиатура для выбора срока выполнения"""
+    today = datetime.now()
+    
+    buttons = [
+        [
+            InlineKeyboardButton(text="📅 Сегодня", callback_data=f"due_{today.strftime('%Y-%m-%d')}"),
+            InlineKeyboardButton(text="📅 Завтра", callback_data=f"due_{(today + timedelta(days=1)).strftime('%Y-%m-%d')}")
+        ],
+        [
+            InlineKeyboardButton(text="📅 Через 3 дня", callback_data=f"due_{(today + timedelta(days=3)).strftime('%Y-%m-%d')}"),
+            InlineKeyboardButton(text="📅 Через неделю", callback_data=f"due_{(today + timedelta(days=7)).strftime('%Y-%m-%d')}")
+        ],
+        [
+            InlineKeyboardButton(text="📅 Через 2 недели", callback_data=f"due_{(today + timedelta(days=14)).strftime('%Y-%m-%d')}"),
+            InlineKeyboardButton(text="📅 Через месяц", callback_data=f"due_{(today + timedelta(days=30)).strftime('%Y-%m-%d')}")
         ],
         [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
     ]
@@ -775,10 +798,26 @@ async def process_task_description(message: Message, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("priority_"))
 async def process_priority(callback: CallbackQuery, state: FSMContext):
-    """Обработать выбор приоритета и перейти к выбору исполнителя"""
+    """Обработать выбор приоритета и перейти к выбору срока"""
     priority = callback.data.split('_')[1]
     
     await state.update_data(priority=priority)
+    await state.set_state(CreateTaskStates.waiting_for_due_date)
+    
+    await callback.message.edit_text(
+        "📅 <b>Выберите срок выполнения задачи:</b>",
+        parse_mode='HTML',
+        reply_markup=get_due_date_keyboard()
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("due_"))
+async def process_due_date(callback: CallbackQuery, state: FSMContext):
+    """Обработать выбор срока и перейти к выбору исполнителя"""
+    due_date = callback.data.split('_', 1)[1]
+    
+    await state.update_data(due_date=due_date)
     await state.set_state(CreateTaskStates.waiting_for_assignee)
     
     await callback.message.edit_text(
@@ -808,6 +847,7 @@ async def process_assignee(callback: CallbackQuery, state: FSMContext):
     title = data.get('title', '')
     description = data.get('description', '')
     priority = data.get('priority', 'medium')
+    due_date = data.get('due_date', (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d'))
     
     conn = get_db_connection()
     cur = conn.cursor()
@@ -835,7 +875,7 @@ async def process_assignee(callback: CallbackQuery, state: FSMContext):
                 title,
                 description,
                 priority,
-                (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d'),
+                due_date,
                 assignee_id,
                 user['id']
             )
@@ -855,6 +895,7 @@ async def process_assignee(callback: CallbackQuery, state: FSMContext):
             f"ID: {task[0]}\n"
             f"Название: {task[1]}\n"
             f"Приоритет: {priority_text}\n"
+            f"Срок: 📅 {due_date}\n"
             f"Исполнитель: @{assignee[0]}\n"
             f"Статус: ⏳ Ожидает",
             parse_mode='HTML',
