@@ -6,3 +6,22 @@ dist
 *.db
 *.db-*
 .DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+attached_assets/
+
+# Database backups
+backup_*.sql

@@ -1,0 +1,16 @@
+Зависимости проекта (для установки на сервере):
+====================================================
+
+aiogram==3.22.0          # Telegram Bot Framework
+asyncpg==0.30.0          # Async PostgreSQL driver (опционально)
+flask==3.1.0             # Flask (опционально, не используется ботом)
+psycopg2-binary==2.9.11  # PostgreSQL driver (используется)
+python-dotenv==1.2.1     # Загрузка переменных окружения
+requests==2.32.3         # HTTP запросы (опционально)
+
+Команда установки:
+==================
+pip install aiogram==3.22.0 psycopg2-binary==2.9.11 python-dotenv==1.2.1
+
+Или установите все:
+pip install aiogram asyncpg flask psycopg2-binary python-dotenv requests

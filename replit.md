@@ -126,6 +126,29 @@ logs/                           # Rotating log files
 
 ## Deployment & Management
 
+### Environment Variables & Secrets
+
+**In Replit:**
+- Secrets managed via Replit's Secrets tool (encrypted environment variables)
+- Required secrets: `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, `SESSION_SECRET`
+- Automatically synced between Workspace and Deployment
+
+**On External Server (Ubuntu/VPS):**
+- Create `.env` file in project root
+- Never commit `.env` to git (already in `.gitignore`)
+- Example `.env` file:
+  ```
+  TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
+  DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+  SESSION_SECRET=your_random_secret_key
+  ```
+
+**How to get Telegram Bot Token:**
+1. Open [@BotFather](https://t.me/BotFather) in Telegram
+2. Send `/newbot` to create a new bot or `/token` for existing bot
+3. Copy the token (format: `1234567890:ABC...xyz`)
+4. Add to Replit Secrets or `.env` file
+
 **START_BOT.sh** - Interactive menu for bot management:
 - Start/stop/restart bot manually.
 - View logs (last 50 lines).
@@ -135,6 +158,8 @@ logs/                           # Rotating log files
   - Enable auto-start on boot.
   - Manage service (start/stop/status).
   - View systemd logs via journalctl.
+
+See `DEPLOYMENT.md` for complete deployment instructions.
 
 ## Polling vs. Webhook
 
@@ -178,6 +203,20 @@ The current implementation uses **Polling** due to its advantages:
 ## Utilities
 - **python-dotenv**: For loading environment variables (v1.2.1).
 - **typing-extensions**: For extended type support (v4.15.0).
+
+## Required Python Packages
+
+Install with:
+```bash
+pip install aiogram==3.22.0 psycopg2-binary==2.9.11 python-dotenv==1.2.1
+```
+
+Full list of dependencies:
+- aiogram==3.22.0
+- psycopg2-binary==2.9.11
+- python-dotenv==1.2.1
+- requests (optional)
+- flask (optional, not used by bot)
 
 # Recent Changes (2025-11-17)
 
