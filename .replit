@@ -6,7 +6,7 @@ integrations = ["agentstack-trigger-telegram:1.0.0", "javascript_openai_ai_integ
 
 [nix]
 channel = "stable-24_11"
-packages = ["jq"]
+packages = ["jq", "postgresql"]
 
 [env]
 MASTRA_HIDE_CLOUD_CTA = "true"
