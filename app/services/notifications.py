@@ -73,6 +73,7 @@ def mark_notification_sent(task_id: int, notification_type: str):
 def get_tasks_for_24h_reminder() -> List[Dict[str, Any]]:
     """
     Получить задачи, до срока которых осталось ~24 часа
+    Проверка времени выполняется в Python с учётом timezone
     
     Returns:
         List задач для уведомления
@@ -81,6 +82,7 @@ def get_tasks_for_24h_reminder() -> List[Dict[str, Any]]:
     cur = conn.cursor()
     
     try:
+        # Загружаем все активные задачи
         cur.execute("""
             SELECT 
                 t.id,
@@ -96,12 +98,31 @@ def get_tasks_for_24h_reminder() -> List[Dict[str, Any]]:
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
             WHERE t.status NOT IN ('completed', 'rejected')
-            AND t.due_date BETWEEN datetime('now', '+23 hours') AND datetime('now', '+25 hours')
+            AND t.due_date IS NOT NULL
         """)
         
-        tasks = cur.fetchall()
-        logger.info(f"📋 Found {len(tasks)} tasks for 24h reminder")
-        return tasks
+        all_tasks = cur.fetchall()
+        
+        # Фильтруем задачи с дедлайном ~24 часа в Python с учётом timezone
+        now = get_now()
+        reminder_tasks = []
+        
+        for task in all_tasks:
+            due_date = task['due_date']
+            if isinstance(due_date, datetime):
+                # Приводим к timezone-aware datetime если нужно
+                if due_date.tzinfo is None:
+                    due_date = TIMEZONE.localize(due_date)
+                
+                # Проверяем: до дедлайна осталось от 23 до 25 часов
+                time_until = due_date - now
+                hours_until = time_until.total_seconds() / 3600
+                
+                if 23 <= hours_until <= 25:
+                    reminder_tasks.append(task)
+        
+        logger.info(f"📋 Found {len(reminder_tasks)} tasks for 24h reminder (checked {len(all_tasks)} active tasks)")
+        return reminder_tasks
         
     finally:
         cur.close()
@@ -111,6 +132,7 @@ def get_tasks_for_24h_reminder() -> List[Dict[str, Any]]:
 def get_tasks_for_3h_reminder() -> List[Dict[str, Any]]:
     """
     Получить задачи, до срока которых осталось ~3 часа
+    Проверка времени выполняется в Python с учётом timezone
     
     Returns:
         List задач для уведомления
@@ -119,6 +141,7 @@ def get_tasks_for_3h_reminder() -> List[Dict[str, Any]]:
     cur = conn.cursor()
     
     try:
+        # Загружаем все активные задачи
         cur.execute("""
             SELECT 
                 t.id,
@@ -134,12 +157,31 @@ def get_tasks_for_3h_reminder() -> List[Dict[str, Any]]:
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
             WHERE t.status NOT IN ('completed', 'rejected')
-            AND t.due_date BETWEEN datetime('now', '+2 hours 30 minutes') AND datetime('now', '+3 hours 30 minutes')
+            AND t.due_date IS NOT NULL
         """)
         
-        tasks = cur.fetchall()
-        logger.info(f"📋 Found {len(tasks)} tasks for 3h reminder")
-        return tasks
+        all_tasks = cur.fetchall()
+        
+        # Фильтруем задачи с дедлайном ~3 часа в Python с учётом timezone
+        now = get_now()
+        reminder_tasks = []
+        
+        for task in all_tasks:
+            due_date = task['due_date']
+            if isinstance(due_date, datetime):
+                # Приводим к timezone-aware datetime если нужно
+                if due_date.tzinfo is None:
+                    due_date = TIMEZONE.localize(due_date)
+                
+                # Проверяем: до дедлайна осталось от 2.5 до 3.5 часов
+                time_until = due_date - now
+                hours_until = time_until.total_seconds() / 3600
+                
+                if 2.5 <= hours_until <= 3.5:
+                    reminder_tasks.append(task)
+        
+        logger.info(f"📋 Found {len(reminder_tasks)} tasks for 3h reminder (checked {len(all_tasks)} active tasks)")
+        return reminder_tasks
         
     finally:
         cur.close()
@@ -149,6 +191,7 @@ def get_tasks_for_3h_reminder() -> List[Dict[str, Any]]:
 def get_tasks_for_1h_reminder() -> List[Dict[str, Any]]:
     """
     Получить задачи, до срока которых осталось ~1 час
+    Проверка времени выполняется в Python с учётом timezone
     
     Returns:
         List задач для уведомления
@@ -157,6 +200,7 @@ def get_tasks_for_1h_reminder() -> List[Dict[str, Any]]:
     cur = conn.cursor()
     
     try:
+        # Загружаем все активные задачи
         cur.execute("""
             SELECT 
                 t.id,
@@ -172,12 +216,31 @@ def get_tasks_for_1h_reminder() -> List[Dict[str, Any]]:
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
             WHERE t.status NOT IN ('completed', 'rejected')
-            AND t.due_date BETWEEN datetime('now', '+50 minutes') AND datetime('now', '+1 hour 10 minutes')
+            AND t.due_date IS NOT NULL
         """)
         
-        tasks = cur.fetchall()
-        logger.info(f"📋 Found {len(tasks)} tasks for 1h reminder")
-        return tasks
+        all_tasks = cur.fetchall()
+        
+        # Фильтруем задачи с дедлайном ~1 час в Python с учётом timezone
+        now = get_now()
+        reminder_tasks = []
+        
+        for task in all_tasks:
+            due_date = task['due_date']
+            if isinstance(due_date, datetime):
+                # Приводим к timezone-aware datetime если нужно
+                if due_date.tzinfo is None:
+                    due_date = TIMEZONE.localize(due_date)
+                
+                # Проверяем: до дедлайна осталось от 50 минут до 1 часа 10 минут
+                time_until = due_date - now
+                minutes_until = time_until.total_seconds() / 60
+                
+                if 50 <= minutes_until <= 70:
+                    reminder_tasks.append(task)
+        
+        logger.info(f"📋 Found {len(reminder_tasks)} tasks for 1h reminder (checked {len(all_tasks)} active tasks)")
+        return reminder_tasks
         
     finally:
         cur.close()

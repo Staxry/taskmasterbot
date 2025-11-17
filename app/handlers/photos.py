@@ -13,7 +13,7 @@ from app.services.users import get_or_create_user
 from app.keyboards.main_menu import get_main_keyboard
 from app.states import CompleteTaskStates, CreateTaskStates
 from app.logging_config import get_logger
-from app.config import get_now, combine_datetime, TIMEZONE
+from app.config import get_now, combine_datetime, TIMEZONE, TIMEZONE_ABBR
 
 logger = get_logger(__name__)
 
@@ -142,7 +142,7 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
 <b>Задача #{task_id_val}</b>
 <b>Название:</b> {title}
 <b>Приоритет:</b> {priority_text}
-<b>Срок был:</b> 📅 {due_date_str} (МСК)
+<b>Срок был:</b> 📅 {due_date_str} ({TIMEZONE_ABBR})
 
 <b>Исполнитель:</b> {executor_display}
 <b>Комментарий:</b> {comment}
@@ -154,7 +154,7 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
 <b>Задача #{task_id_val}</b>
 <b>Название:</b> {title}
 <b>Приоритет:</b> {priority_text}
-<b>Срок:</b> 📅 {due_date_str} (МСК)
+<b>Срок:</b> 📅 {due_date_str} ({TIMEZONE_ABBR})
 
 <b>Исполнитель:</b> {executor_display}
 <b>Отчёт о прогрессе:</b> {comment}
@@ -283,7 +283,7 @@ async def process_completion_photo(message: Message, state: FSMContext):
 <b>Задача #{task_id_val}</b>
 <b>Название:</b> {title}
 <b>Приоритет:</b> {priority_text}
-<b>Срок был:</b> 📅 {due_date_str} (МСК)
+<b>Срок был:</b> 📅 {due_date_str} ({TIMEZONE_ABBR})
 
 <b>Исполнитель:</b> {executor_display}
 <b>Комментарий:</b> {comment}
@@ -295,7 +295,7 @@ async def process_completion_photo(message: Message, state: FSMContext):
 <b>Задача #{task_id_val}</b>
 <b>Название:</b> {title}
 <b>Приоритет:</b> {priority_text}
-<b>Срок:</b> 📅 {due_date_str} (МСК)
+<b>Срок:</b> 📅 {due_date_str} ({TIMEZONE_ABBR})
 
 <b>Исполнитель:</b> {executor_display}
 <b>Отчёт о прогрессе:</b> {comment}
@@ -502,7 +502,7 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
         success_msg += f"ID: {task_id}\n"
         success_msg += f"Название: {title}\n"
         success_msg += f"Приоритет: {priority_text}\n"
-        success_msg += f"Срок: 📅 {due_datetime.strftime('%d.%m.%Y %H:%M')} (МСК)\n"
+        success_msg += f"Срок: 📅 {due_datetime.strftime('%d.%m.%Y %H:%M')} ({TIMEZONE_ABBR})\n"
         
         if assignee_username:
             # Форматируем имя исполнителя
@@ -552,7 +552,7 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
 <b>Название:</b> {title}
 <b>Описание:</b> {description or 'Нет описания'}
 <b>Приоритет:</b> {priority_text}
-<b>Срок:</b> 📅 {due_datetime.strftime('%d.%m.%Y %H:%M')} (МСК)
+<b>Срок:</b> 📅 {due_datetime.strftime('%d.%m.%Y %H:%M')} ({TIMEZONE_ABBR})
 <b>Создал:</b> {creator_display}
 <b>Статус:</b> ⏳ Ожидает
 

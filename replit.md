@@ -4,11 +4,19 @@ This project is a full-featured asynchronous Telegram bot designed for task mana
 
 ## Recent Updates (Nov 17, 2025)
 
+- **Fixed Timezone Support in Notifications**: Corrected all reminder checks to properly work with Europe/Kaliningrad timezone
+  - Fixed 24h/3h/1h reminder checks - now properly compare timezone-aware datetimes in Python instead of SQL
+  - Fixed overdue task detection to account for UTC+2 timezone
+  - All reminder windows now work correctly: 24h (23-25h), 3h (2.5-3.5h), 1h (50-70min)
+  - Changed timezone abbreviation from "(МСК)" to "(КЛД)" in all notifications
+  - Added configurable TIMEZONE_ABBR in app/config.py for easy timezone label customization
+
 - **Enhanced Notification System**: Improved proactive deadline management
   - Check frequency increased from 30 minutes to 5 minutes for faster response
   - Added 1-hour reminder notification (final warning before deadline)
   - Three-tier reminder system: 24h → 3h → 1h warnings
   - Reduced error recovery pause from 5 minutes to 1 minute
+  - Overdue notifications now sent to both executor and all admins
   
 - **Fixed Dashboard Statistics**: Corrected status count calculations
   - Fixed dict_factory data transformation in statistics module

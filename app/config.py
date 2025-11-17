@@ -15,6 +15,10 @@ BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 # Примеры: 'Europe/Moscow', 'Europe/Kiev', 'Asia/Almaty', 'Europe/Minsk'
 TIMEZONE = pytz.timezone(os.getenv('TIMEZONE', 'Europe/Kaliningrad'))
 
+# Аббревиатура часового пояса для отображения пользователю
+# Europe/Kaliningrad = UTC+2
+TIMEZONE_ABBR = os.getenv('TIMEZONE_ABBR', 'КЛД')
+
 
 def get_now():
     """Получить текущее время в настроенном часовом поясе"""
