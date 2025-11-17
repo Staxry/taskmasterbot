@@ -36,3 +36,8 @@ class AddUserStates(StatesGroup):
 class RemoveUserStates(StatesGroup):
     """Состояния для удаления пользователя"""
     waiting_for_selection = State()
+
+
+class SearchTaskStates(StatesGroup):
+    """Состояния для поиска задач"""
+    waiting_for_query = State()

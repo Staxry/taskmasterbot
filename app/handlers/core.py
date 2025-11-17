@@ -14,7 +14,7 @@ from app.services.users import get_or_create_user
 from app.keyboards.main_menu import get_main_keyboard
 from app.keyboards.task_keyboards import get_task_keyboard, get_priority_keyboard, get_due_date_keyboard
 from app.keyboards.user_keyboards import get_users_keyboard
-from app.states import CreateTaskStates, AddUserStates
+from app.states import CreateTaskStates, AddUserStates, SearchTaskStates
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -237,12 +237,24 @@ async def process_add_user(message: Message, state: FSMContext):
 
 @core_router.callback_query(F.data == "my_tasks")
 async def callback_my_tasks(callback: CallbackQuery):
-    """Обработка кнопки Мои задачи"""
+    """Обработка кнопки Мои задачи (страница 1)"""
+    await show_my_tasks_page(callback, page=1)
+
+
+@core_router.callback_query(F.data.startswith("my_tasks_page_"))
+async def callback_my_tasks_page(callback: CallbackQuery):
+    """Навигация по страницам моих задач"""
+    page = int(callback.data.split('_')[-1])
+    await show_my_tasks_page(callback, page=page)
+
+
+async def show_my_tasks_page(callback: CallbackQuery, page: int = 1):
+    """Показать страницу моих задач с пагинацией"""
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
     
-    logger.info(f"📋 My tasks requested by {username}")
+    logger.info(f"📋 My tasks page {page} requested by {username}")
     
     user = get_or_create_user(telegram_id, username, first_name)
     if not user:
@@ -253,29 +265,46 @@ async def callback_my_tasks(callback: CallbackQuery):
     cur = conn.cursor()
     
     try:
+        # Подсчёт общего количества
         if user['role'] == 'admin':
-            logger.debug(f"📊 Fetching all tasks for admin {username}")
+            cur.execute("SELECT COUNT(*) FROM tasks")
+        else:
+            cur.execute(
+                "SELECT COUNT(*) FROM tasks WHERE assigned_to_id = %s OR assigned_to_id IS NULL",
+                (user['id'],)
+            )
+        total_count = cur.fetchone()[0]
+        
+        # Пагинация
+        page_size = 10
+        offset = (page - 1) * page_size
+        total_pages = (total_count + page_size - 1) // page_size
+        
+        # Получение задач для страницы
+        if user['role'] == 'admin':
+            logger.debug(f"📊 Fetching tasks for admin {username}, page {page}")
             cur.execute(
                 """SELECT id, title, status, priority, due_date, assigned_to_id
                    FROM tasks 
                    ORDER BY created_at DESC
-                   LIMIT 20"""
+                   LIMIT %s OFFSET %s""",
+                (page_size, offset)
             )
         else:
-            logger.debug(f"📊 Fetching tasks for employee {username} (id={user['id']})")
+            logger.debug(f"📊 Fetching tasks for employee {username}, page {page}")
             cur.execute(
                 """SELECT id, title, status, priority, due_date, assigned_to_id
                    FROM tasks 
                    WHERE assigned_to_id = %s OR assigned_to_id IS NULL
                    ORDER BY created_at DESC
-                   LIMIT 20""",
-                (user['id'],)
+                   LIMIT %s OFFSET %s""",
+                (user['id'], page_size, offset)
             )
         tasks = cur.fetchall()
         
-        logger.info(f"📊 Found {len(tasks)} tasks for {username}")
+        logger.info(f"📊 Found {len(tasks)} tasks on page {page}/{total_pages} for {username}")
         
-        if not tasks:
+        if total_count == 0:
             try:
                 await callback.message.edit_text(
                     "📋 У вас пока нет задач.",
@@ -307,7 +336,8 @@ async def callback_my_tasks(callback: CallbackQuery):
             'low': '🟢'
         }
         
-        for task in tasks[:10]:
+        # Кнопки задач
+        for task in tasks:
             task_id, title, status, priority, due_date, assigned_to_id = task
             emoji_status = status_emoji.get(status, '📌')
             emoji_priority = priority_emoji.get(priority, '📌')
@@ -324,20 +354,32 @@ async def callback_my_tasks(callback: CallbackQuery):
                 )
             ])
         
+        # Кнопки пагинации
+        nav_buttons = []
+        if page > 1:
+            nav_buttons.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"my_tasks_page_{page-1}"))
+        if page < total_pages:
+            nav_buttons.append(InlineKeyboardButton(text="▶️ Вперёд", callback_data=f"my_tasks_page_{page+1}"))
+        
+        if nav_buttons:
+            buttons.append(nav_buttons)
+        
         buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
+        text = f"📋 <b>Выберите задачу:</b>\n\nСтраница {page}/{total_pages} (всего {total_count})"
+        
         try:
             await callback.message.edit_text(
-                "📋 <b>Выберите задачу:</b>",
+                text,
                 parse_mode='HTML',
                 reply_markup=keyboard
             )
         except Exception:
             await callback.message.delete()
             await callback.message.answer(
-                "📋 <b>Выберите задачу:</b>",
+                text,
                 parse_mode='HTML',
                 reply_markup=keyboard
             )
@@ -350,12 +392,24 @@ async def callback_my_tasks(callback: CallbackQuery):
 
 @core_router.callback_query(F.data == "all_tasks")
 async def callback_all_tasks(callback: CallbackQuery):
-    """Обработка кнопки Все задачи"""
+    """Обработка кнопки Все задачи (страница 1)"""
+    await show_all_tasks_page(callback, page=1)
+
+
+@core_router.callback_query(F.data.startswith("all_tasks_page_"))
+async def callback_all_tasks_page(callback: CallbackQuery):
+    """Навигация по страницам всех задач"""
+    page = int(callback.data.split('_')[-1])
+    await show_all_tasks_page(callback, page=page)
+
+
+async def show_all_tasks_page(callback: CallbackQuery, page: int = 1):
+    """Показать страницу всех задач с пагинацией"""
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
     
-    logger.info(f"📊 All tasks requested by {username}")
+    logger.info(f"📊 All tasks page {page} requested by {username}")
     
     user = get_or_create_user(telegram_id, username, first_name)
     if not user:
@@ -371,20 +425,30 @@ async def callback_all_tasks(callback: CallbackQuery):
     cur = conn.cursor()
     
     try:
-        logger.debug(f"📊 Fetching all tasks for admin {username}")
+        # Подсчёт общего количества
+        cur.execute("SELECT COUNT(*) FROM tasks")
+        total_count = cur.fetchone()[0]
+        
+        # Пагинация
+        page_size = 10
+        offset = (page - 1) * page_size
+        total_pages = (total_count + page_size - 1) // page_size
+        
+        logger.debug(f"📊 Fetching all tasks for admin {username}, page {page}/{total_pages}")
         
         cur.execute(
             """SELECT t.id, t.title, t.status, t.priority, u.username
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
                ORDER BY t.created_at DESC
-               LIMIT 20"""
+               LIMIT %s OFFSET %s""",
+            (page_size, offset)
         )
         tasks = cur.fetchall()
         
-        logger.info(f"📊 Found {len(tasks)} total tasks in system")
+        logger.info(f"📊 Found {len(tasks)} tasks on page {page}/{total_pages}")
         
-        if not tasks:
+        if total_count == 0:
             await callback.message.edit_text(
                 "📋 В системе пока нет задач.",
                 reply_markup=get_main_keyboard(user['role'])
@@ -409,7 +473,8 @@ async def callback_all_tasks(callback: CallbackQuery):
             'low': '🟢'
         }
         
-        for task in tasks[:10]:
+        # Кнопки задач
+        for task in tasks:
             task_id, title, status, priority, assigned_username = task
             emoji_status = status_emoji.get(status, '📌')
             emoji_priority = priority_emoji.get(priority, '📌')
@@ -422,12 +487,24 @@ async def callback_all_tasks(callback: CallbackQuery):
                 )
             ])
         
+        # Кнопки пагинации
+        nav_buttons = []
+        if page > 1:
+            nav_buttons.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"all_tasks_page_{page-1}"))
+        if page < total_pages:
+            nav_buttons.append(InlineKeyboardButton(text="▶️ Вперёд", callback_data=f"all_tasks_page_{page+1}"))
+        
+        if nav_buttons:
+            buttons.append(nav_buttons)
+        
         buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
+        text = f"📋 <b>Все задачи в системе:</b>\n\nСтраница {page}/{total_pages} (всего {total_count})"
+        
         await callback.message.edit_text(
-            f"📋 <b>Все задачи в системе ({len(tasks)}):</b>",
+            text,
             parse_mode='HTML',
             reply_markup=keyboard
         )
@@ -1236,6 +1313,203 @@ async def callback_confirm_remove_user(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"❌ Error removing user {user_id_to_remove}: {e}", exc_info=True)
         await callback.answer(f"❌ Ошибка при удалении: {str(e)}", show_alert=True)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@core_router.callback_query(F.data == "search_tasks")
+async def callback_search_tasks(callback: CallbackQuery, state: FSMContext):
+    """Начать поиск задач"""
+    from app.states import SearchTaskStates
+    
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username
+    first_name = callback.from_user.first_name or ''
+    
+    logger.info(f"🔍 Search tasks requested by {username}")
+    
+    user = get_or_create_user(telegram_id, username, first_name)
+    if not user:
+        await callback.answer("❌ Доступ запрещён", show_alert=True)
+        return
+    
+    await state.set_state(SearchTaskStates.waiting_for_query)
+    
+    cancel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
+        [InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")]
+    ])
+    
+    try:
+        await callback.message.edit_text(
+            "🔍 <b>Поиск задач</b>\n\n"
+            "Введите текст для поиска (название или описание задачи):\n\n"
+            "Например: <code>отчёт</code> или <code>дизайн сайта</code>",
+            parse_mode='HTML',
+            reply_markup=cancel_keyboard
+        )
+    except Exception:
+        await callback.message.delete()
+        await callback.message.answer(
+            "🔍 <b>Поиск задач</b>\n\n"
+            "Введите текст для поиска (название или описание задачи):\n\n"
+            "Например: <code>отчёт</code> или <code>дизайн сайта</code>",
+            parse_mode='HTML',
+            reply_markup=cancel_keyboard
+        )
+    await callback.answer()
+
+
+@core_router.message(SearchTaskStates.waiting_for_query)
+async def process_search_query(message: Message, state: FSMContext):
+    """Обработка поискового запроса"""
+    from app.states import SearchTaskStates
+    
+    telegram_id = str(message.from_user.id)
+    username = message.from_user.username
+    first_name = message.from_user.first_name or ''
+    
+    query = message.text.strip()
+    
+    logger.info(f"🔍 Search query from {username}: '{query}'")
+    
+    if len(query) < 2:
+        await message.answer(
+            "❌ Запрос слишком короткий. Введите минимум 2 символа."
+        )
+        return
+    
+    user = get_or_create_user(telegram_id, username, first_name)
+    if not user:
+        await message.answer("❌ Доступ запрещён")
+        await state.clear()
+        return
+    
+    await state.update_data(search_query=query)
+    await state.clear()
+    
+    await show_search_results_page(message, user, query, page=1)
+
+
+async def show_search_results_page(message: Message, user: dict, query: str, page: int = 1):
+    """Показать страницу результатов поиска"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        search_pattern = f"%{query}%"
+        
+        # Подсчёт общего количества
+        if user['role'] == 'admin':
+            cur.execute(
+                """SELECT COUNT(*) FROM tasks 
+                   WHERE title ILIKE %s OR description ILIKE %s""",
+                (search_pattern, search_pattern)
+            )
+        else:
+            cur.execute(
+                """SELECT COUNT(*) FROM tasks 
+                   WHERE (title ILIKE %s OR description ILIKE %s)
+                   AND (assigned_to_id = %s OR assigned_to_id IS NULL)""",
+                (search_pattern, search_pattern, user['id'])
+            )
+        total_count = cur.fetchone()[0]
+        
+        if total_count == 0:
+            await message.answer(
+                f"🔍 По запросу «{query}» ничего не найдено.",
+                reply_markup=get_main_keyboard(user['role'])
+            )
+            return
+        
+        # Пагинация
+        page_size = 10
+        offset = (page - 1) * page_size
+        total_pages = (total_count + page_size - 1) // page_size
+        
+        # Получение задач
+        if user['role'] == 'admin':
+            cur.execute(
+                """SELECT id, title, status, priority, due_date, assigned_to_id
+                   FROM tasks 
+                   WHERE title ILIKE %s OR description ILIKE %s
+                   ORDER BY created_at DESC
+                   LIMIT %s OFFSET %s""",
+                (search_pattern, search_pattern, page_size, offset)
+            )
+        else:
+            cur.execute(
+                """SELECT id, title, status, priority, due_date, assigned_to_id
+                   FROM tasks 
+                   WHERE (title ILIKE %s OR description ILIKE %s)
+                   AND (assigned_to_id = %s OR assigned_to_id IS NULL)
+                   ORDER BY created_at DESC
+                   LIMIT %s OFFSET %s""",
+                (search_pattern, search_pattern, user['id'], page_size, offset)
+            )
+        tasks = cur.fetchall()
+        
+        logger.info(f"🔍 Found {len(tasks)} tasks on page {page}/{total_pages} for query '{query}'")
+        
+        buttons = []
+        
+        status_emoji = {
+            'pending': '⏳',
+            'in_progress': '🔄',
+            'partially_completed': '🔶',
+            'completed': '✅',
+            'rejected': '❌'
+        }
+        
+        priority_emoji = {
+            'urgent': '🔴',
+            'high': '🟠',
+            'medium': '🟡',
+            'low': '🟢'
+        }
+        
+        # Кнопки задач
+        for task in tasks:
+            task_id, title, status, priority, due_date, assigned_to_id = task
+            emoji_status = status_emoji.get(status, '📌')
+            emoji_priority = priority_emoji.get(priority, '📌')
+            
+            if assigned_to_id is None:
+                button_text = f"🆓 {emoji_priority} {title[:20]}"
+            else:
+                button_text = f"{emoji_status} {emoji_priority} {title[:25]}"
+            
+            buttons.append([
+                InlineKeyboardButton(
+                    text=button_text,
+                    callback_data=f"task_{task_id}"
+                )
+            ])
+        
+        # Кнопки пагинации (для будущей реализации)
+        # nav_buttons = []
+        # if page > 1:
+        #     nav_buttons.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"search_page_{page-1}"))
+        # if page < total_pages:
+        #     nav_buttons.append(InlineKeyboardButton(text="▶️ Вперёд", callback_data=f"search_page_{page+1}"))
+        # if nav_buttons:
+        #     buttons.append(nav_buttons)
+        
+        buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        text = f"🔍 <b>Результаты поиска:</b> «{query}»\n\nНайдено: {total_count}"
+        if total_pages > 1:
+            text += f"\n\nСтраница {page}/{total_pages}"
+        
+        await message.answer(
+            text,
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+    
     finally:
         cur.close()
         conn.close()

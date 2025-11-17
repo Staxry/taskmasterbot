@@ -21,6 +21,7 @@ def get_main_keyboard(role: str) -> InlineKeyboardMarkup:
     
     buttons = [
         [InlineKeyboardButton(text="📋 Мои задачи", callback_data="my_tasks")],
+        [InlineKeyboardButton(text="🔍 Поиск задач", callback_data="search_tasks")],
     ]
     
     if role == 'admin':
