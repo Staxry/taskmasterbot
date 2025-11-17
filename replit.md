@@ -179,7 +179,7 @@ The current implementation uses **Polling** due to its advantages:
 - **python-dotenv**: For loading environment variables (v1.2.1).
 - **typing-extensions**: For extended type support (v4.15.0).
 
-# Recent Changes (2024-11-17)
+# Recent Changes (2025-11-17)
 
 ## Major Refactoring: Modular Architecture v2.0
 
@@ -196,3 +196,23 @@ The current implementation uses **Polling** due to its advantages:
 - **Created interactive management script**: `START_BOT.sh` with menu for Ubuntu server deployment and systemd service management.
 
 - **Improved maintainability**: Each module has clear responsibility, easier to test and extend.
+
+## Bug Fixes & UX Improvements (2025-11-17 Evening)
+
+- **Fixed critical bug**: Added missing FSM state `asking_for_task_photo` in `CreateTaskStates`, resolving AttributeError during task creation.
+  
+- **Fixed database enum**: Added missing `partially_completed` status to PostgreSQL enum type `task_status`.
+
+- **Fixed message editing error**: Added error handling for edit_text operations with fallback to delete+answer pattern when editing messages with photos.
+
+- **Fixed notification logic**: Removed inconsistent check that prevented self-notifications on task completion. Now matches creation behavior where admins receive all notifications including self-assigned tasks.
+
+- **Enhanced UX**: Added "📂 Открыть задачу" button to all admin notifications (task completion with/without photo).
+
+- **Improved navigation**: Added "🔙 Главное меню" button to ALL FSM keyboards:
+  - Task creation flow (title, description, priority, due date, assignee, photo)
+  - Task completion flow (comment, photo upload)
+  - User management flow (add admin, add employee)
+  - All cancel/skip keyboards
+  
+This ensures users can exit to main menu from any point in the workflow without getting stuck.
