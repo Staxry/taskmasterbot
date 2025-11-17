@@ -12,7 +12,7 @@ class CreateTaskStates(StatesGroup):
     waiting_for_due_date = State()
     waiting_for_manual_due_date = State()
     waiting_for_assignee = State()
-    asking_for_photo = State()
+    asking_for_task_photo = State()
     waiting_for_task_photo = State()
 
 
