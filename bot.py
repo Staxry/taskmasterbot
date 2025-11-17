@@ -43,6 +43,8 @@ class AddUserStates(StatesGroup):
 
 class CompleteTaskStates(StatesGroup):
     waiting_for_comment = State()
+    asking_for_photo = State()
+    waiting_for_photo = State()
 
 
 def get_db_connection():
@@ -821,9 +823,61 @@ async def process_completion_comment(message: Message, state: FSMContext):
         await state.clear()
         return
     
+    # Сохраняем комментарий и спрашиваем про фото
+    await state.update_data(comment=comment)
+    await state.set_state(CompleteTaskStates.asking_for_photo)
+    
+    photo_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Да, добавить фото", callback_data="photo_yes"),
+            InlineKeyboardButton(text="❌ Нет, без фото", callback_data="photo_no")
+        ]
+    ])
+    
+    await message.answer(
+        "📸 <b>Добавить фото к отчёту?</b>\n\n"
+        "Фото поможет лучше продемонстрировать результат работы.",
+        parse_mode='HTML',
+        reply_markup=photo_keyboard
+    )
+
+
+@dp.callback_query(F.data == "photo_yes")
+async def callback_photo_yes(callback: CallbackQuery, state: FSMContext):
+    """Пользователь хочет добавить фото"""
+    await state.set_state(CompleteTaskStates.waiting_for_photo)
+    
+    cancel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⏭ Пропустить", callback_data="photo_no")]
+    ])
+    
+    await callback.message.edit_text(
+        "📸 <b>Загрузите фото</b>\n\n"
+        "Отправьте фотографию результата работы.\n"
+        "Можно отправить одно фото.",
+        parse_mode='HTML',
+        reply_markup=cancel_keyboard
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "photo_no")
+async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
+    """Пользователь не хочет добавлять фото"""
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username
+    first_name = callback.from_user.first_name or ''
+    
+    user = get_or_create_user(telegram_id, username, first_name)
+    if not user:
+        await callback.answer("❌ Доступ запрещён", show_alert=True)
+        await state.clear()
+        return
+    
     data = await state.get_data()
     task_id = data.get('task_id')
     new_status = data.get('new_status')
+    comment = data.get('comment')
     
     conn = get_db_connection()
     cur = conn.cursor()
@@ -863,13 +917,13 @@ async def process_completion_comment(message: Message, state: FSMContext):
             else:  # partially_completed
                 confirmation = "🔶 <b>Задача частично завершена!</b>\n\nКомментарий сохранён.\nСоздатель задачи получит уведомление о прогрессе."
             
-            await message.answer(
+            await callback.message.answer(
                 confirmation,
                 parse_mode='HTML',
                 reply_markup=get_main_keyboard(user['role'])
             )
             
-            # Отправляем уведомление создателю задачи
+            # Отправляем уведомление создателю задачи (без фото)
             if created_by_id and creator_telegram_id and creator_telegram_id != telegram_id:
                 try:
                     if new_status == 'completed':
@@ -911,6 +965,121 @@ async def process_completion_comment(message: Message, state: FSMContext):
     
     except Exception as e:
         logger.error(f"Error completing task: {e}", exc_info=True)
+        await callback.message.answer("❌ Ошибка при завершении задачи", reply_markup=get_main_keyboard(user['role']))
+    finally:
+        cur.close()
+        conn.close()
+
+
+@dp.message(CompleteTaskStates.waiting_for_photo, F.photo)
+async def process_completion_photo(message: Message, state: FSMContext):
+    """Обработать загруженное фото"""
+    telegram_id = str(message.from_user.id)
+    username = message.from_user.username
+    first_name = message.from_user.first_name or ''
+    
+    user = get_or_create_user(telegram_id, username, first_name)
+    if not user:
+        await message.answer("❌ Доступ запрещён")
+        await state.clear()
+        return
+    
+    # Получаем самую большую версию фото
+    photo_file_id = message.photo[-1].file_id
+    
+    data = await state.get_data()
+    task_id = data.get('task_id')
+    new_status = data.get('new_status')
+    comment = data.get('comment')
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Обновляем задачу с комментарием и фото
+        cur.execute(
+            "UPDATE tasks SET status = %s, completion_comment = %s, photo_file_id = %s, updated_at = NOW() WHERE id = %s",
+            (new_status, comment, photo_file_id, task_id)
+        )
+        conn.commit()
+        
+        # Получаем информацию о задаче
+        cur.execute(
+            """SELECT t.id, t.title, t.description, t.priority, t.due_date, 
+                      t.created_by_id, c.username as creator_username, c.telegram_id as creator_telegram_id
+               FROM tasks t
+               LEFT JOIN users c ON t.created_by_id = c.id
+               WHERE t.id = %s""",
+            (task_id,)
+        )
+        task_info = cur.fetchone()
+        
+        if task_info:
+            task_id, title, description, priority, due_date, created_by_id, creator_username, creator_telegram_id = task_info
+            
+            priority_text = {
+                'urgent': '🔴 Срочно',
+                'high': '🟠 Высокий',
+                'medium': '🟡 Средний',
+                'low': '🟢 Низкий'
+            }.get(priority, priority)
+            
+            # Подтверждение пользователю
+            if new_status == 'completed':
+                confirmation = "✅ <b>Задача завершена!</b>\n\n📸 Фото и комментарий сохранены.\nСоздатель задачи получит уведомление."
+            else:  # partially_completed
+                confirmation = "🔶 <b>Задача частично завершена!</b>\n\n📸 Фото и комментарий сохранены.\nСоздатель задачи получит уведомление о прогрессе."
+            
+            await message.answer(
+                confirmation,
+                parse_mode='HTML',
+                reply_markup=get_main_keyboard(user['role'])
+            )
+            
+            # Отправляем уведомление создателю задачи с фото
+            if created_by_id and creator_telegram_id and creator_telegram_id != telegram_id:
+                try:
+                    if new_status == 'completed':
+                        caption = f"""✅ <b>Задача завершена!</b>
+
+<b>Задача #{task_id}</b>
+<b>Название:</b> {title}
+<b>Приоритет:</b> {priority_text}
+<b>Срок был:</b> 📅 {due_date}
+
+<b>Исполнитель:</b> @{username}
+<b>Комментарий:</b> {comment}
+
+Используйте /start для просмотра задачи."""
+                    else:  # partially_completed
+                        caption = f"""🔶 <b>Задача частично завершена!</b>
+
+<b>Задача #{task_id}</b>
+<b>Название:</b> {title}
+<b>Приоритет:</b> {priority_text}
+<b>Срок:</b> 📅 {due_date}
+
+<b>Исполнитель:</b> @{username}
+<b>Отчёт о прогрессе:</b> {comment}
+
+Задача ещё в работе. Используйте /start для просмотра."""
+                    
+                    # Отправляем фото с подписью
+                    await bot.send_photo(
+                        chat_id=creator_telegram_id,
+                        photo=photo_file_id,
+                        caption=caption,
+                        parse_mode='HTML'
+                    )
+                    logger.info(f"✅ Completion notification with photo sent to {creator_username} (task #{task_id})")
+                except Exception as notif_error:
+                    logger.warning(f"⚠️ Could not send completion notification: {notif_error}")
+        
+        await state.clear()
+        logger.info(f"✅ Task #{task_id} completed by {username} with comment and photo")
+    
+    except Exception as e:
+        logger.error(f"Error completing task with photo: {e}", exc_info=True)
         await message.answer("❌ Ошибка при завершении задачи", reply_markup=get_main_keyboard(user['role']))
     finally:
         cur.close()
