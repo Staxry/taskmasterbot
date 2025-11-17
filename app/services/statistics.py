@@ -103,11 +103,11 @@ def get_dashboard_statistics(user_role: str = 'admin') -> Dict[str, Any]:
         
         # Топ исполнителей
         cur.execute("""
-            SELECT u.username, COUNT(t.id) as task_count
+            SELECT u.username, u.first_name, u.last_name, COUNT(t.id) as task_count
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
             WHERE t.status = 'completed'
-            GROUP BY u.username
+            GROUP BY u.username, u.first_name, u.last_name
             ORDER BY task_count DESC
             LIMIT 5
         """)
@@ -216,8 +216,19 @@ def generate_excel_report(report_type: str = 'full') -> io.BytesIO:
         ws[f'B{row}'].font = Font(bold=True)
         
         row += 1
-        for username, count in stats['top_performers']:
-            ws[f'A{row}'] = username
+        for performer in stats['top_performers']:
+            username = performer['username']
+            first_name = performer.get('first_name')
+            last_name = performer.get('last_name')
+            count = performer['task_count']
+            
+            # Форматируем имя исполнителя
+            if first_name or last_name:
+                user_display = f"{first_name or ''} {last_name or ''}".strip() + f" (@{username})"
+            else:
+                user_display = f"@{username}"
+            
+            ws[f'A{row}'] = user_display
             ws[f'B{row}'] = count
             row += 1
     
@@ -295,6 +306,8 @@ def generate_excel_report(report_type: str = 'full') -> io.BytesIO:
         cur.execute("""
             SELECT 
                 u.username,
+                u.first_name,
+                u.last_name,
                 t.id,
                 t.title,
                 t.priority,
@@ -309,12 +322,20 @@ def generate_excel_report(report_type: str = 'full') -> io.BytesIO:
         row_completed = 4
         for task in completed_tasks:
             username = task['username']
+            first_name = task.get('first_name')
+            last_name = task.get('last_name')
             task_id = task['id']
             title = task['title']
             priority = task['priority']
             updated_at = task['updated_at']
             
-            ws_completed[f'A{row_completed}'] = username
+            # Форматируем имя исполнителя
+            if first_name or last_name:
+                user_display = f"{first_name or ''} {last_name or ''}".strip() + f" (@{username})"
+            else:
+                user_display = f"@{username}"
+            
+            ws_completed[f'A{row_completed}'] = user_display
             ws_completed[f'B{row_completed}'] = task_id
             ws_completed[f'C{row_completed}'] = title[:50]  # Ограничение длины
             ws_completed[f'D{row_completed}'] = priority
@@ -354,6 +375,8 @@ def generate_excel_report(report_type: str = 'full') -> io.BytesIO:
         cur.execute("""
             SELECT 
                 u.username,
+                u.first_name,
+                u.last_name,
                 t.id,
                 t.title,
                 t.priority,
@@ -371,6 +394,8 @@ def generate_excel_report(report_type: str = 'full') -> io.BytesIO:
         row_overdue = 4
         for task in overdue_tasks:
             username = task['username']
+            first_name = task.get('first_name')
+            last_name = task.get('last_name')
             task_id = task['id']
             title = task['title']
             priority = task['priority']
@@ -378,7 +403,13 @@ def generate_excel_report(report_type: str = 'full') -> io.BytesIO:
             status = task['status']
             days_overdue = task['days_overdue']
             
-            ws_overdue[f'A{row_overdue}'] = username
+            # Форматируем имя исполнителя
+            if first_name or last_name:
+                user_display = f"{first_name or ''} {last_name or ''}".strip() + f" (@{username})"
+            else:
+                user_display = f"@{username}"
+            
+            ws_overdue[f'A{row_overdue}'] = user_display
             ws_overdue[f'B{row_overdue}'] = task_id
             ws_overdue[f'C{row_overdue}'] = title[:50]
             ws_overdue[f'D{row_overdue}'] = priority

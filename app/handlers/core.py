@@ -1537,10 +1537,22 @@ async def callback_dashboard(callback: CallbackQuery):
     
     if stats.get('top_performers'):
         text += "🏆 <b>Топ исполнителей:</b>\n"
-        for i, (username_perf, count) in enumerate(stats['top_performers'][:3], 1):
+        for i, performer in enumerate(stats['top_performers'][:3], 1):
             medals = {1: '🥇', 2: '🥈', 3: '🥉'}
             medal = medals.get(i, '🏅')
-            text += f"{medal} {username_perf}: {count} задач\n"
+            
+            username = performer['username']
+            first_name = performer.get('first_name')
+            last_name = performer.get('last_name')
+            count = performer['task_count']
+            
+            # Форматируем имя исполнителя
+            if first_name or last_name:
+                user_display = f"{first_name or ''} {last_name or ''}".strip() + f" (@{username})"
+            else:
+                user_display = f"@{username}"
+            
+            text += f"{medal} {user_display}: {count} задач\n"
     
     # Кнопки для экспорта
     buttons = [
