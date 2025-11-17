@@ -41,6 +41,10 @@ class AddUserStates(StatesGroup):
     waiting_for_role = State()
 
 
+class CompleteTaskStates(StatesGroup):
+    waiting_for_comment = State()
+
+
 def get_db_connection():
     """Создать подключение к PostgreSQL"""
     return psycopg2.connect(DATABASE_URL)
@@ -663,7 +667,7 @@ async def callback_task_details(callback: CallbackQuery):
 
 
 @dp.callback_query(F.data.startswith("status_"))
-async def callback_update_status(callback: CallbackQuery):
+async def callback_update_status(callback: CallbackQuery, state: FSMContext):
     """Обновить статус задачи"""
     parts = callback.data.split('_')
     task_id = int(parts[1])
@@ -696,6 +700,26 @@ async def callback_update_status(callback: CallbackQuery):
             await callback.answer("❌ Вы можете обновлять только свои задачи.", show_alert=True)
             return
         
+        # Если меняем на "Завершена" - запрашиваем комментарий
+        if new_status == 'completed':
+            await state.update_data(task_id=task_id, new_status=new_status)
+            await state.set_state(CompleteTaskStates.waiting_for_comment)
+            
+            cancel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+            ])
+            
+            await callback.message.edit_text(
+                "✅ <b>Завершение задачи</b>\n\n"
+                "Напишите <b>комментарий</b> о выполненной работе:\n\n"
+                "Например: 'Отчёт подготовлен и отправлен руководству'",
+                parse_mode='HTML',
+                reply_markup=cancel_keyboard
+            )
+            await callback.answer()
+            return
+        
+        # Для других статусов - обновляем сразу
         cur.execute(
             "UPDATE tasks SET status = %s, updated_at = NOW() WHERE id = %s",
             (new_status, task_id)
@@ -705,7 +729,6 @@ async def callback_update_status(callback: CallbackQuery):
         status_text = {
             'pending': '⏳ Ожидает',
             'in_progress': '🔄 В работе',
-            'completed': '✅ Завершена',
             'rejected': '❌ Отклонена'
         }.get(new_status, new_status)
         
@@ -760,6 +783,101 @@ async def callback_update_status(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Error updating status: {e}", exc_info=True)
         await callback.answer(f"❌ Ошибка при обновлении статуса: {str(e)}", show_alert=True)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@dp.message(CompleteTaskStates.waiting_for_comment)
+async def process_completion_comment(message: Message, state: FSMContext):
+    """Обработать комментарий о завершении задачи"""
+    comment = message.text
+    
+    telegram_id = str(message.from_user.id)
+    username = message.from_user.username
+    first_name = message.from_user.first_name or ''
+    
+    user = get_or_create_user(telegram_id, username, first_name)
+    if not user:
+        await message.answer("❌ Доступ запрещён")
+        await state.clear()
+        return
+    
+    data = await state.get_data()
+    task_id = data.get('task_id')
+    new_status = data.get('new_status')
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Обновляем статус и сохраняем комментарий
+        cur.execute(
+            "UPDATE tasks SET status = %s, completion_comment = %s, updated_at = NOW() WHERE id = %s",
+            (new_status, comment, task_id)
+        )
+        conn.commit()
+        
+        # Получаем информацию о задаче и создателе
+        cur.execute(
+            """SELECT t.id, t.title, t.description, t.priority, t.due_date, 
+                      t.created_by_id, c.username as creator_username, c.telegram_id as creator_telegram_id
+               FROM tasks t
+               LEFT JOIN users c ON t.created_by_id = c.id
+               WHERE t.id = %s""",
+            (task_id,)
+        )
+        task_info = cur.fetchone()
+        
+        if task_info:
+            task_id, title, description, priority, due_date, created_by_id, creator_username, creator_telegram_id = task_info
+            
+            priority_text = {
+                'urgent': '🔴 Срочно',
+                'high': '🟠 Высокий',
+                'medium': '🟡 Средний',
+                'low': '🟢 Низкий'
+            }.get(priority, priority)
+            
+            # Подтверждение пользователю
+            await message.answer(
+                f"✅ <b>Задача завершена!</b>\n\n"
+                f"Комментарий сохранён.\n"
+                f"Создатель задачи получит уведомление.",
+                parse_mode='HTML',
+                reply_markup=get_main_keyboard(user['role'])
+            )
+            
+            # Отправляем уведомление создателю задачи
+            if created_by_id and creator_telegram_id and creator_telegram_id != telegram_id:
+                try:
+                    notification_text = f"""✅ <b>Задача завершена!</b>
+
+<b>Задача #{task_id}</b>
+<b>Название:</b> {title}
+<b>Приоритет:</b> {priority_text}
+<b>Срок был:</b> 📅 {due_date}
+
+<b>Исполнитель:</b> @{username}
+<b>Комментарий:</b> {comment}
+
+Используйте /start для просмотра задачи."""
+                    
+                    await bot.send_message(
+                        chat_id=creator_telegram_id,
+                        text=notification_text,
+                        parse_mode='HTML'
+                    )
+                    logger.info(f"✅ Completion notification sent to {creator_username} (task #{task_id})")
+                except Exception as notif_error:
+                    logger.warning(f"⚠️ Could not send completion notification: {notif_error}")
+        
+        await state.clear()
+        logger.info(f"✅ Task #{task_id} completed by {username} with comment")
+    
+    except Exception as e:
+        logger.error(f"Error completing task: {e}", exc_info=True)
+        await message.answer("❌ Ошибка при завершении задачи", reply_markup=get_main_keyboard(user['role']))
     finally:
         cur.close()
         conn.close()
