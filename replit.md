@@ -4,6 +4,12 @@ This project is a full-featured asynchronous Telegram bot designed for task mana
 
 ## Recent Updates (Nov 17, 2025)
 
+- **Task Reopening Notifications**: Employee notifications when task is returned to work
+  - When admin reopens a completed/partially completed task, assignee receives instant notification
+  - Notification includes admin name, task details, deadline, and direct "Open Task" button
+  - Message format: "🔄 Задача возвращена в работу" with admin's full name and task priority
+  - Helps employees stay informed about tasks requiring rework
+
 - **Implemented Frequent Final Hour Alerts**: Last-minute deadline urgency system
   - During the final hour (1-60 minutes before deadline), notifications are sent **every 5 minutes**
   - Each alert shows exact remaining time: "Осталось: X мин"

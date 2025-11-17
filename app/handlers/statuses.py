@@ -311,6 +311,18 @@ async def callback_reopen_task(callback: CallbackQuery):
         
         logger.debug(f"🔄 Reopening task #{task_id}, clearing completion data")
         
+        # Получаем данные задачи перед обновлением для уведомления
+        cur.execute(
+            """SELECT t.id, t.title, t.description, t.priority, t.due_date, t.assigned_to_id,
+                      u.telegram_id as assignee_telegram_id, u.username as assignee_username,
+                      u.first_name as assignee_first_name, u.last_name as assignee_last_name
+               FROM tasks t
+               LEFT JOIN users u ON t.assigned_to_id = u.id
+               WHERE t.id = ?""",
+            (task_id,)
+        )
+        task_data = cur.fetchone()
+        
         cur.execute(
             """UPDATE tasks 
                SET status = 'in_progress', 
@@ -323,6 +335,49 @@ async def callback_reopen_task(callback: CallbackQuery):
         conn.commit()
         
         logger.info(f"✅ Admin {username} reopened task #{task_id}")
+        
+        # Отправляем уведомление исполнителю о возврате задачи
+        if task_data and task_data['assigned_to_id'] and task_data['assignee_telegram_id']:
+            logger.info(f"📧 Sending notification to assignee about task #{task_id} reopening")
+            
+            priority_emoji = {
+                'urgent': '🔴',
+                'high': '🟠',
+                'medium': '🟡',
+                'low': '🟢'
+            }.get(task_data['priority'], '⚪')
+            
+            # Форматируем имя админа
+            if first_name or last_name:
+                admin_display = f"{first_name or ''} {last_name or ''}".strip() + f" (@{username})"
+            else:
+                admin_display = f"@{username}"
+            
+            assignee_message = (
+                f"🔄 <b>Задача возвращена в работу</b>\n\n"
+                f"{priority_emoji} <b>#{task_data['id']}:</b> {task_data['title']}\n\n"
+                f"👤 <b>Возвращена админом:</b> {admin_display}\n"
+                f"📅 <b>Срок:</b> {task_data['due_date']}\n\n"
+                f"⚠️ Задача требует повторного выполнения.\n"
+                f"Пожалуйста, завершите её снова с учётом замечаний."
+            )
+            
+            from app.main import bot
+            
+            try:
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="📂 Открыть задачу", callback_data=f"task_{task_id}")]
+                ])
+                
+                await bot.send_message(
+                    chat_id=task_data['assignee_telegram_id'],
+                    text=assignee_message,
+                    parse_mode='HTML',
+                    reply_markup=keyboard
+                )
+                logger.info(f"✅ Notification sent to {task_data['assignee_username']} about task #{task_id} reopening")
+            except Exception as e:
+                logger.error(f"❌ Failed to send notification to assignee: {e}")
         
         await callback.answer("✅ Задача возвращена в работу", show_alert=True)
         
