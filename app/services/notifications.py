@@ -90,7 +90,9 @@ def get_tasks_for_24h_reminder() -> List[Dict[str, Any]]:
                 t.due_date,
                 t.assigned_to_id,
                 u.telegram_id,
-                u.username
+                u.username,
+                u.first_name,
+                u.last_name
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
             WHERE t.status NOT IN ('completed', 'rejected')
@@ -126,7 +128,9 @@ def get_tasks_for_3h_reminder() -> List[Dict[str, Any]]:
                 t.due_date,
                 t.assigned_to_id,
                 u.telegram_id,
-                u.username
+                u.username,
+                u.first_name,
+                u.last_name
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
             WHERE t.status NOT IN ('completed', 'rejected')
@@ -162,7 +166,9 @@ def get_overdue_tasks() -> List[Dict[str, Any]]:
                 t.due_date,
                 t.assigned_to_id,
                 u.telegram_id,
-                u.username
+                u.username,
+                u.first_name,
+                u.last_name
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
             WHERE t.status NOT IN ('completed', 'rejected')
@@ -321,12 +327,18 @@ async def send_overdue_notification(bot: Bot, task: Dict[str, Any]):
     now_aware = get_now()
     days_overdue = (now_aware.date() - due_date_aware.date()).days
     
+    # Форматируем имя исполнителя
+    if task.get('first_name') or task.get('last_name'):
+        executor_display = f"{task.get('first_name', '') or ''} {task.get('last_name', '') or ''}".strip() + f" (@{task['username']})"
+    else:
+        executor_display = f"@{task['username']}"
+    
     description_text = task['description'][:100] if task.get('description') else "Нет описания"
     message = (
         f"❌ <b>ЗАДАЧА ПРОСРОЧЕНА!</b>\n\n"
         f"{emoji} <b>{task['title']}</b>\n"
         f"📝 {description_text}...\n\n"
-        f"👤 Исполнитель: @{task['username']}\n"
+        f"👤 Исполнитель: {executor_display}\n"
         f"⏳ Срок был: {task['due_date'].strftime('%d.%m.%Y %H:%M')}\n"
         f"⚠️ Просрочено на <b>{days_overdue} дн.</b>\n\n"
         f"Требуется проверка и контроль выполнения."

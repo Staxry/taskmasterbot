@@ -138,10 +138,16 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
                 'low': '🟢'
             }.get(task['priority'], '⚪')
             
+            # Форматируем имя исполнителя
+            if first_name or last_name:
+                executor_display = f"{first_name or ''} {last_name or ''}".strip() + f" (@{username})"
+            else:
+                executor_display = f"@{username}"
+            
             admin_message = (
                 f"🔔 <b>Задача взята в работу</b>\n\n"
                 f"{priority_emoji} <b>#{task_id}:</b> {task['title']}\n\n"
-                f"👤 <b>Исполнитель:</b> @{username}\n"
+                f"👤 <b>Исполнитель:</b> {executor_display}\n"
                 f"📅 <b>Срок:</b> {task['due_date']}\n\n"
                 f"Задача была свободной и взята в работу пользователем."
             )
@@ -322,7 +328,7 @@ async def callback_reopen_task(callback: CallbackQuery):
         
         cur.execute(
             """SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, 
-                      u.username, t.created_at, t.assigned_to_id
+                      u.username, u.first_name, u.last_name, t.created_at, t.assigned_to_id
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
                WHERE t.id = ?""",
@@ -338,8 +344,19 @@ async def callback_reopen_task(callback: CallbackQuery):
             priority = updated_task['priority']
             due_date = updated_task['due_date']
             assigned_username = updated_task.get('username')
+            assigned_first_name = updated_task.get('first_name')
+            assigned_last_name = updated_task.get('last_name')
             created_at = updated_task['created_at']
             assigned_to_id = updated_task['assigned_to_id']
+            
+            # Форматируем имя назначенного пользователя
+            if assigned_username:
+                if assigned_first_name or assigned_last_name:
+                    assignee_display = f"{assigned_first_name or ''} {assigned_last_name or ''}".strip() + f" (@{assigned_username})"
+                else:
+                    assignee_display = f"@{assigned_username}"
+            else:
+                assignee_display = "🆓 Свободна (можно взять)"
             
             status_text = {
                 'pending': '⏳ Ожидает',
@@ -363,7 +380,7 @@ async def callback_reopen_task(callback: CallbackQuery):
 <b>Статус:</b> {status_text}
 <b>Приоритет:</b> {priority_text}
 <b>Срок:</b> {due_date}
-<b>Назначена:</b> @{assigned_username or '🆓 Свободна (можно взять)'}
+<b>Назначена:</b> {assignee_display}
 <b>Создана:</b> {created_at}
 
 Выберите новый статус:"""

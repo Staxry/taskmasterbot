@@ -436,7 +436,7 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
     try:
         if assignee_id:
             cur.execute(
-                "SELECT username, telegram_id FROM users WHERE id = ?",
+                "SELECT username, telegram_id, first_name, last_name FROM users WHERE id = ?",
                 (assignee_id,)
             )
             assignee = cur.fetchone()
@@ -452,9 +452,13 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
             
             assignee_username = assignee['username']
             assignee_telegram_id = assignee['telegram_id']
+            assignee_first_name = assignee.get('first_name')
+            assignee_last_name = assignee.get('last_name')
         else:
             assignee_username = None
             assignee_telegram_id = None
+            assignee_first_name = None
+            assignee_last_name = None
         
         logger.info(f"💾 Inserting task into database with photo_file_id={photo_file_id}")
         
@@ -501,7 +505,12 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
         success_msg += f"Срок: 📅 {due_datetime.strftime('%d.%m.%Y %H:%M')} (МСК)\n"
         
         if assignee_username:
-            success_msg += f"Исполнитель: @{assignee_username}\n"
+            # Форматируем имя исполнителя
+            if assignee_first_name or assignee_last_name:
+                assignee_display = f"{assignee_first_name or ''} {assignee_last_name or ''}".strip() + f" (@{assignee_username})"
+            else:
+                assignee_display = f"@{assignee_username}"
+            success_msg += f"Исполнитель: {assignee_display}\n"
         else:
             success_msg += f"Исполнитель: 🆓 Не назначена (свободная)\n"
         
@@ -531,6 +540,12 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
         
         if assignee_telegram_id:
             try:
+                # Форматируем имя создателя
+                if first_name or last_name:
+                    creator_display = f"{first_name or ''} {last_name or ''}".strip() + f" (@{username})"
+                else:
+                    creator_display = f"@{username}"
+                
                 notification_text = f"""📋 <b>Вам назначена новая задача!</b>
 
 <b>Задача #{task_id}</b>
@@ -538,7 +553,7 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
 <b>Описание:</b> {description or 'Нет описания'}
 <b>Приоритет:</b> {priority_text}
 <b>Срок:</b> 📅 {due_datetime.strftime('%d.%m.%Y %H:%M')} (МСК)
-<b>Создал:</b> @{username}
+<b>Создал:</b> {creator_display}
 <b>Статус:</b> ⏳ Ожидает
 
 Используйте /start для просмотра задачи."""

@@ -453,7 +453,7 @@ async def show_all_tasks_page(callback: CallbackQuery, page: int = 1):
         logger.debug(f"📊 Fetching all tasks for admin {username}, page {page}/{total_pages}")
         
         cur.execute(
-            """SELECT t.id, t.title, t.status, t.priority, u.username
+            """SELECT t.id, t.title, t.status, t.priority, u.username, u.first_name, u.last_name
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
                ORDER BY t.created_at DESC
@@ -496,11 +496,20 @@ async def show_all_tasks_page(callback: CallbackQuery, page: int = 1):
             status = task['status']
             priority = task['priority']
             assigned_username = task.get('username')
+            assigned_first_name = task.get('first_name')
+            assigned_last_name = task.get('last_name')
             emoji_status = status_emoji.get(status, '📌')
             emoji_priority = priority_emoji.get(priority, '📌')
             
             if assigned_username:
-                button_text = f"{emoji_status} {emoji_priority} {title[:15]} (@{assigned_username[:8]})"
+                # Полное имя в формате "Имя Фамилия (@username)"
+                if assigned_first_name or assigned_last_name:
+                    user_display = f"{assigned_first_name or ''} {assigned_last_name or ''}".strip() + f" (@{assigned_username})"
+                else:
+                    user_display = f"@{assigned_username}"
+                # Обрезаем только название задачи, НЕ имя пользователя
+                title_short = title[:8]
+                button_text = f"{emoji_status} {emoji_priority} {title_short} - {user_display}"
             else:
                 button_text = f"{emoji_status} {emoji_priority} {title[:20]}"
             buttons.append([
@@ -561,7 +570,7 @@ async def callback_task_details(callback: CallbackQuery):
     try:
         cur.execute(
             """SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, 
-                      u.username, t.created_at, t.assigned_to_id, t.completion_comment, t.photo_file_id
+                      u.username, u.first_name, u.last_name, t.created_at, t.assigned_to_id, t.completion_comment, t.photo_file_id
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
                WHERE t.id = ?""",
@@ -581,6 +590,8 @@ async def callback_task_details(callback: CallbackQuery):
         priority = task['priority']
         due_date = task['due_date']
         assigned_username = task.get('username')
+        assigned_first_name = task.get('first_name')
+        assigned_last_name = task.get('last_name')
         created_at = task['created_at']
         assigned_to_id = task['assigned_to_id']
         completion_comment = task.get('completion_comment')
@@ -603,6 +614,15 @@ async def callback_task_details(callback: CallbackQuery):
             'low': '🟢 Низкий'
         }.get(priority, priority)
         
+        # Форматируем имя назначенного пользователя
+        if assigned_username:
+            if assigned_first_name or assigned_last_name:
+                assignee_display = f"{assigned_first_name or ''} {assigned_last_name or ''}".strip() + f" (@{assigned_username})"
+            else:
+                assignee_display = f"@{assigned_username}"
+        else:
+            assignee_display = "🆓 Свободна (можно взять)"
+        
         text = f"""📋 <b>Задача #{tid}</b>
 
 <b>Название:</b> {title}
@@ -610,7 +630,7 @@ async def callback_task_details(callback: CallbackQuery):
 <b>Статус:</b> {status_text}
 <b>Приоритет:</b> {priority_text}
 <b>Срок:</b> {due_date}
-<b>Назначена:</b> @{assigned_username or '🆓 Свободна (можно взять)'}
+<b>Назначена:</b> {assignee_display}
 <b>Создана:</b> {created_at}
 """
         
@@ -720,7 +740,7 @@ async def callback_take_task(callback: CallbackQuery):
         
         if created_by_id:
             cur.execute(
-                "SELECT telegram_id, username FROM users WHERE id = ?",
+                "SELECT telegram_id, username, first_name, last_name FROM users WHERE id = ?",
                 (created_by_id,)
             )
             creator = cur.fetchone()
@@ -728,6 +748,12 @@ async def callback_take_task(callback: CallbackQuery):
             if creator:
                 creator_telegram_id = creator['telegram_id']
                 creator_username = creator['username']
+                
+                # Форматируем имя исполнителя
+                if first_name or last_name:
+                    executor_display = f"{first_name or ''} {last_name or ''}".strip() + f" (@{username})"
+                else:
+                    executor_display = f"@{username}"
                 
                 priority_text = {
                     'urgent': '🔴 Срочно',
@@ -743,7 +769,7 @@ async def callback_take_task(callback: CallbackQuery):
 <b>Описание:</b> {description or 'Нет описания'}
 <b>Приоритет:</b> {priority_text}
 <b>Срок:</b> 📅 {due_date}
-<b>Исполнитель:</b> @{username}
+<b>Исполнитель:</b> {executor_display}
 <b>Статус:</b> 🔄 В работе
 
 Нажмите кнопку ниже для просмотра задачи."""
@@ -1106,7 +1132,7 @@ async def callback_delete_task_menu(callback: CallbackQuery):
         logger.debug("📊 Fetching uncompleted tasks for deletion")
         
         cur.execute(
-            """SELECT t.id, t.title, t.status, t.priority, u.username
+            """SELECT t.id, t.title, t.status, t.priority, u.username, u.first_name, u.last_name
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
                WHERE t.status != 'completed'
@@ -1146,11 +1172,20 @@ async def callback_delete_task_menu(callback: CallbackQuery):
             status = task['status']
             priority = task['priority']
             assigned_username = task.get('username')
+            assigned_first_name = task.get('first_name')
+            assigned_last_name = task.get('last_name')
             emoji_status = status_emoji.get(status, '📌')
             emoji_priority = priority_emoji.get(priority, '📌')
             
             if assigned_username:
-                button_text = f"{emoji_status} {emoji_priority} {title[:15]} (@{assigned_username[:8]})"
+                # Полное имя в формате "Имя Фамилия (@username)"
+                if assigned_first_name or assigned_last_name:
+                    user_display = f"{assigned_first_name or ''} {assigned_last_name or ''}".strip() + f" (@{assigned_username})"
+                else:
+                    user_display = f"@{assigned_username}"
+                # Обрезаем только название задачи, НЕ имя пользователя
+                title_short = title[:8]
+                button_text = f"{emoji_status} {emoji_priority} {title_short} - {user_display}"
             else:
                 button_text = f"{emoji_status} {emoji_priority} {title[:25]}"
             buttons.append([
