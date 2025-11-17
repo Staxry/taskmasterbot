@@ -281,23 +281,25 @@ async def show_my_tasks_page(callback: CallbackQuery, page: int = 1):
         offset = (page - 1) * page_size
         total_pages = (total_count + page_size - 1) // page_size
         
-        # Получение задач для страницы
+        # Получение задач для страницы с именем исполнителя
         if user['role'] == 'admin':
             logger.debug(f"📊 Fetching tasks for admin {username}, page {page}")
             cur.execute(
-                """SELECT id, title, status, priority, due_date, assigned_to_id
-                   FROM tasks 
-                   ORDER BY created_at DESC
+                """SELECT t.id, t.title, t.status, t.priority, t.due_date, t.assigned_to_id, u.username as assignee_name
+                   FROM tasks t
+                   LEFT JOIN users u ON t.assigned_to_id = u.id
+                   ORDER BY t.created_at DESC
                    LIMIT ? OFFSET ?""",
                 (page_size, offset)
             )
         else:
             logger.debug(f"📊 Fetching tasks for employee {username}, page {page}")
             cur.execute(
-                """SELECT id, title, status, priority, due_date, assigned_to_id
-                   FROM tasks 
-                   WHERE assigned_to_id = ? OR assigned_to_id IS NULL
-                   ORDER BY created_at DESC
+                """SELECT t.id, t.title, t.status, t.priority, t.due_date, t.assigned_to_id, u.username as assignee_name
+                   FROM tasks t
+                   LEFT JOIN users u ON t.assigned_to_id = u.id
+                   WHERE t.assigned_to_id = ? OR t.assigned_to_id IS NULL
+                   ORDER BY t.created_at DESC
                    LIMIT ? OFFSET ?""",
                 (user['id'], page_size, offset)
             )
@@ -339,7 +341,12 @@ async def show_my_tasks_page(callback: CallbackQuery, page: int = 1):
         
         # Кнопки задач
         for task in tasks:
-            task_id, title, status, priority, due_date, assigned_to_id = task
+            task_id = task['id']
+            title = task['title']
+            status = task['status']
+            priority = task['priority']
+            assigned_to_id = task.get('assigned_to_id')
+            assignee_name = task.get('assignee_name')
             emoji_status = status_emoji.get(status, '📌')
             emoji_priority = priority_emoji.get(priority, '📌')
             
@@ -477,11 +484,18 @@ async def show_all_tasks_page(callback: CallbackQuery, page: int = 1):
         
         # Кнопки задач
         for task in tasks:
-            task_id, title, status, priority, assigned_username = task
+            task_id = task['id']
+            title = task['title']
+            status = task['status']
+            priority = task['priority']
+            assigned_username = task.get('username')
             emoji_status = status_emoji.get(status, '📌')
             emoji_priority = priority_emoji.get(priority, '📌')
             
-            button_text = f"{emoji_status} {emoji_priority} {title[:20]}"
+            if assigned_username:
+                button_text = f"{emoji_status} {emoji_priority} {title[:15]} (@{assigned_username[:8]})"
+            else:
+                button_text = f"{emoji_status} {emoji_priority} {title[:20]}"
             buttons.append([
                 InlineKeyboardButton(
                     text=button_text,
@@ -659,7 +673,14 @@ async def callback_take_task(callback: CallbackQuery):
             await callback.answer("❌ Задача не найдена.", show_alert=True)
             return
         
-        task_id_db, title, description, priority, due_date, assigned_to_id, created_by_id, task_photo_file_id = task
+        task_id_db = task['id']
+        title = task['title']
+        description = task['description']
+        priority = task['priority']
+        due_date = task['due_date']
+        assigned_to_id = task['assigned_to_id']
+        created_by_id = task['created_by_id']
+        task_photo_file_id = task['task_photo_file_id']
         
         logger.info(f"📋 Task #{task_id_db} info: assigned_to={assigned_to_id}, has_photo={bool(task_photo_file_id)}")
         
@@ -686,7 +707,8 @@ async def callback_take_task(callback: CallbackQuery):
             creator = cur.fetchone()
             
             if creator:
-                creator_telegram_id, creator_username = creator
+                creator_telegram_id = creator['telegram_id']
+                creator_username = creator['username']
                 
                 priority_text = {
                     'urgent': '🔴 Срочно',
@@ -1098,11 +1120,18 @@ async def callback_delete_task_menu(callback: CallbackQuery):
         }
         
         for task in tasks:
-            task_id, title, status, priority, assigned_username = task
+            task_id = task['id']
+            title = task['title']
+            status = task['status']
+            priority = task['priority']
+            assigned_username = task.get('username')
             emoji_status = status_emoji.get(status, '📌')
             emoji_priority = priority_emoji.get(priority, '📌')
             
-            button_text = f"{emoji_status} {emoji_priority} {title[:25]}"
+            if assigned_username:
+                button_text = f"{emoji_status} {emoji_priority} {title[:15]} (@{assigned_username[:8]})"
+            else:
+                button_text = f"{emoji_status} {emoji_priority} {title[:25]}"
             buttons.append([
                 InlineKeyboardButton(
                     text=button_text,
@@ -1281,11 +1310,11 @@ async def callback_remove_employee(callback: CallbackQuery):
     
     try:
         cur.execute(
-            "SELECT id, username FROM users WHERE role = 'employee' ORDER BY username"
+            "SELECT id, username FROM users ORDER BY username"
         )
         employees = cur.fetchall()
         
-        logger.info(f"📊 Found {len(employees)} employees")
+        logger.info(f"📊 Found {len(employees)} users")
         
         if not employees:
             await callback.message.edit_text(
@@ -1643,23 +1672,25 @@ async def show_search_results_page(message: Message, user: dict, query: str, pag
         offset = (page - 1) * page_size
         total_pages = (total_count + page_size - 1) // page_size
         
-        # Получение задач
+        # Получение задач с именем исполнителя
         if user['role'] == 'admin':
             cur.execute(
-                """SELECT id, title, status, priority, due_date, assigned_to_id
-                   FROM tasks 
-                   WHERE title LIKE ? OR description LIKE ?
-                   ORDER BY created_at DESC
+                """SELECT t.id, t.title, t.status, t.priority, t.due_date, t.assigned_to_id, u.username as assignee_name
+                   FROM tasks t
+                   LEFT JOIN users u ON t.assigned_to_id = u.id
+                   WHERE t.title LIKE ? OR t.description LIKE ?
+                   ORDER BY t.created_at DESC
                    LIMIT ? OFFSET ?""",
                 (search_pattern, search_pattern, page_size, offset)
             )
         else:
             cur.execute(
-                """SELECT id, title, status, priority, due_date, assigned_to_id
-                   FROM tasks 
-                   WHERE (title LIKE ? OR description LIKE ?)
-                   AND (assigned_to_id = ? OR assigned_to_id IS NULL)
-                   ORDER BY created_at DESC
+                """SELECT t.id, t.title, t.status, t.priority, t.due_date, t.assigned_to_id, u.username as assignee_name
+                   FROM tasks t
+                   LEFT JOIN users u ON t.assigned_to_id = u.id
+                   WHERE (t.title LIKE ? OR t.description LIKE ?)
+                   AND (t.assigned_to_id = ? OR t.assigned_to_id IS NULL)
+                   ORDER BY t.created_at DESC
                    LIMIT ? OFFSET ?""",
                 (search_pattern, search_pattern, user['id'], page_size, offset)
             )
@@ -1686,7 +1717,12 @@ async def show_search_results_page(message: Message, user: dict, query: str, pag
         
         # Кнопки задач
         for task in tasks:
-            task_id, title, status, priority, due_date, assigned_to_id = task
+            task_id = task['id']
+            title = task['title']
+            status = task['status']
+            priority = task['priority']
+            assigned_to_id = task.get('assigned_to_id')
+            assignee_name = task.get('assignee_name')
             emoji_status = status_emoji.get(status, '📌')
             emoji_priority = priority_emoji.get(priority, '📌')
             
