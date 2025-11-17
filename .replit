@@ -1,4 +1,4 @@
-modules = ["nodejs-22", "postgresql-16"]
+modules = ["nodejs-22", "postgresql-16", "python-3.11"]
 
 [agent]
 stack = "AGENT_STACK"
@@ -26,11 +26,11 @@ localPort = 5000
 externalPort = 80
 
 [[ports]]
-localPort = 8289
+localPort = 8080
+externalPort = 8080
 
 [[ports]]
-localPort = 42179
-externalPort = 3003
+localPort = 8289
 
 [[ports]]
 localPort = 50052
