@@ -14,10 +14,12 @@
 ✅ **Готов к использованию (Python + Aiogram + Polling)**
 
 Все компоненты реализованы на Python и протестированы:
-- База данных PostgreSQL с таблицами users и tasks
+- База данных PostgreSQL с таблицами users, tasks и allowed_users
 - Асинхронный бот на aiogram с polling (без webhook)
-- Все команды: /start, /help, /my_tasks, /all_tasks, /task_details, /update_status, /create_task
+- Интерактивные inline-кнопки для всех команд
+- Система whitelist авторизации по username
 - Валидация прав доступа (admin vs employee)
+- FSM для создания задач и добавления пользователей
 - Обработка ошибок и валидация данных
 - **Полностью бесплатно** - без затрат на AI API
 
@@ -25,8 +27,11 @@
 - ✅ Полностью переписан на Python + aiogram
 - ✅ Удалены все TypeScript/Mastra файлы
 - ✅ Использован polling вместо webhook (работает сразу, без публикации)
-- ✅ Асинхронная обработка команд через aiogram
-- ✅ Все команды реализованы и работают
+- ✅ Добавлены inline-кнопки для всех команд
+- ✅ Система whitelist авторизации по username
+- ✅ Кнопки "Добавить админа" и "Добавить сотрудника"
+- ✅ Блокировка доступа для неавторизованных пользователей
+- ✅ Очистка проекта от лишних файлов
 
 **Как использовать:**
 1. Бот уже запущен и работает в фоне
@@ -51,14 +56,15 @@ Preferred communication style: Simple, everyday language (Russian).
 ## Database Layer
 
 **PostgreSQL с psycopg2** для работы с данными:
-- **Schema Design**: Две основные таблицы (users, tasks) с enum типами для ролей, приоритетов и статусов
+- **Schema Design**: Три основные таблицы (users, tasks, allowed_users) с enum типами для ролей, приоритетов и статусов
 - **Relations**: Foreign key связи между users и tasks (assigned_to_id, created_by_id)
 - **Connection**: Синхронный драйвер psycopg2 с подключением через `DATABASE_URL`
 - **Migration Strategy**: Схема создана через Drizzle (из предыдущей версии)
 
 **Key Entities**:
-- Users: Telegram ID (unique), username, role (admin/employee), timestamps
-- Tasks: Title, description, priority (low/medium/high/urgent), status (pending/in_progress/completed/rejected), due date, assignment tracking
+- **Users**: Telegram ID (unique), username, role (admin/employee), timestamps
+- **Tasks**: Title, description, priority (low/medium/high/urgent), status (pending/in_progress/completed/rejected), due date, assignment tracking
+- **Allowed Users**: Username (unique), role, added_by_id (FK → users.id), created_at - whitelist для авторизации
 
 ## Bot Architecture
 
@@ -130,11 +136,16 @@ Preferred communication style: Simple, everyday language (Russian).
 ├── bot.py              # Основной файл бота (aiogram)
 ├── README.md           # Документация на русском
 ├── replit.md           # Этот файл (архитектура проекта)
-├── shared/
-│   ├── schema.ts       # Схема БД (Drizzle, устаревшая)
-│   └── db.ts           # Подключение к БД (устаревшее)
-└── pyproject.toml      # Python зависимости (управляется uv)
+├── START_BOT.sh        # Скрипт запуска бота
+├── pyproject.toml      # Python зависимости (управляется uv)
+└── uv.lock             # Версии пакетов
 ```
+
+**Все лишние файлы удалены:**
+- ❌ TypeScript файлы (shared/, *.ts)
+- ❌ Node.js зависимости (package.json, node_modules)
+- ❌ Mastra документация (docs/)
+- ❌ Дубликаты README
 
 # Available Commands
 
