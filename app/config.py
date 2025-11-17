@@ -13,7 +13,7 @@ BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 # Timezone Configuration
 # Установите нужный часовой пояс для вашего региона
 # Примеры: 'Europe/Moscow', 'Europe/Kiev', 'Asia/Almaty', 'Europe/Minsk'
-TIMEZONE = pytz.timezone(os.getenv('TIMEZONE', 'Europe/Kaliningrad'))
+TIMEZONE = pytz.timezone(os.getenv('TIMEZONE', 'Europe/Moscow'))
 
 
 def get_now():

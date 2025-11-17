@@ -5,7 +5,7 @@ Main bot initialization module
 import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
-from app.config import BOT_TOKEN
+from app.config import BOT_TOKEN, TIMEZONE, get_now
 from app.logging_config import setup_logging, get_logger
 from app.database import init_database
 
@@ -46,6 +46,14 @@ async def on_startup():
     """
     logger.info("=" * 60)
     logger.info("🚀 Bot is starting...")
+    logger.info("=" * 60)
+    
+    # Информация о часовом поясе
+    current_time = get_now()
+    logger.info("🌍 Timezone configuration:")
+    logger.info(f"   📍 Timezone: {TIMEZONE}")
+    logger.info(f"   🕐 Current date/time: {current_time.strftime('%d.%m.%Y %H:%M:%S')} ({TIMEZONE.zone})")
+    logger.info(f"   🌐 UTC offset: {current_time.strftime('%z')}")
     logger.info("=" * 60)
     
     # Инициализация базы данных
