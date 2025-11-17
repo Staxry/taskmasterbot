@@ -8,6 +8,7 @@ from aiogram import Bot
 
 from app.database import get_db_connection
 from app.logging_config import get_logger
+from app.config import get_now, TIMEZONE
 
 logger = get_logger(__name__)
 
@@ -93,7 +94,7 @@ def get_tasks_for_24h_reminder() -> List[Dict[str, Any]]:
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
             WHERE t.status NOT IN ('completed', 'rejected')
-            AND t.due_date::timestamp BETWEEN NOW() + INTERVAL '23 hours' AND NOW() + INTERVAL '25 hours'
+            AND t.due_date BETWEEN NOW() + INTERVAL '23 hours' AND NOW() + INTERVAL '25 hours'
         """)
         
         tasks = []
@@ -141,7 +142,7 @@ def get_tasks_for_3h_reminder() -> List[Dict[str, Any]]:
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
             WHERE t.status NOT IN ('completed', 'rejected')
-            AND t.due_date::timestamp BETWEEN NOW() + INTERVAL '2 hours 30 minutes' AND NOW() + INTERVAL '3 hours 30 minutes'
+            AND t.due_date BETWEEN NOW() + INTERVAL '2 hours 30 minutes' AND NOW() + INTERVAL '3 hours 30 minutes'
         """)
         
         tasks = []
@@ -189,8 +190,8 @@ def get_overdue_tasks() -> List[Dict[str, Any]]:
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
             WHERE t.status NOT IN ('completed', 'rejected')
-            AND t.due_date < CURRENT_DATE
-            AND t.due_date >= CURRENT_DATE - INTERVAL '1 day'
+            AND t.due_date < NOW()
+            AND t.due_date >= NOW() - INTERVAL '1 day'
         """)
         
         tasks = []
@@ -350,8 +351,10 @@ async def send_overdue_notification(bot: Bot, task: Dict[str, Any]):
     
     emoji = priority_emoji.get(task['priority'], '📌')
     
-    due_date_obj = task['due_date'].date() if hasattr(task['due_date'], 'date') else task['due_date']
-    days_overdue = (datetime.now().date() - due_date_obj).days
+    # Конвертируем due_date в часовой пояс приложения для корректного отображения
+    due_date_aware = task['due_date'] if task['due_date'].tzinfo else TIMEZONE.localize(task['due_date'])
+    now_aware = get_now()
+    days_overdue = (now_aware.date() - due_date_aware.date()).days
     
     description_text = task['description'][:100] if task.get('description') else "Нет описания"
     message = (

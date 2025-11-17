@@ -4,6 +4,7 @@ Task-related keyboards
 from datetime import datetime, timedelta
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from app.logging_config import get_logger
+from app.config import get_now
 
 logger = get_logger(__name__)
 
@@ -104,7 +105,7 @@ def get_due_date_keyboard() -> InlineKeyboardMarkup:
     """
     logger.debug("🎹 Generating due date keyboard")
     
-    today = datetime.now()
+    today = get_now()
     
     buttons = [
         [
