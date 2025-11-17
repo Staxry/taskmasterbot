@@ -124,3 +124,52 @@ def get_due_date_keyboard() -> InlineKeyboardMarkup:
     ]
     
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_due_time_keyboard() -> InlineKeyboardMarkup:
+    """
+    Клавиатура для выбора времени выполнения задачи
+    
+    Returns:
+        InlineKeyboardMarkup: Клавиатура выбора времени
+    """
+    logger.debug("🎹 Generating due time keyboard")
+    
+    buttons = []
+    
+    # Утро
+    buttons.append([
+        InlineKeyboardButton(text="🌅 09:00", callback_data="time_09:00"),
+        InlineKeyboardButton(text="🌅 10:00", callback_data="time_10:00"),
+        InlineKeyboardButton(text="🌅 11:00", callback_data="time_11:00")
+    ])
+    
+    # День
+    buttons.append([
+        InlineKeyboardButton(text="☀️ 12:00", callback_data="time_12:00"),
+        InlineKeyboardButton(text="☀️ 13:00", callback_data="time_13:00"),
+        InlineKeyboardButton(text="☀️ 14:00", callback_data="time_14:00")
+    ])
+    
+    # Вечер
+    buttons.append([
+        InlineKeyboardButton(text="🌆 15:00", callback_data="time_15:00"),
+        InlineKeyboardButton(text="🌆 16:00", callback_data="time_16:00"),
+        InlineKeyboardButton(text="🌆 17:00", callback_data="time_17:00")
+    ])
+    
+    buttons.append([
+        InlineKeyboardButton(text="🌃 18:00", callback_data="time_18:00"),
+        InlineKeyboardButton(text="🌃 19:00", callback_data="time_19:00"),
+        InlineKeyboardButton(text="🌃 20:00", callback_data="time_20:00")
+    ])
+    
+    # Специальные опции
+    buttons.append([
+        InlineKeyboardButton(text="🌙 23:59 (конец дня)", callback_data="time_23:59"),
+        InlineKeyboardButton(text="✍️ Ввод вручную", callback_data="time_manual")
+    ])
+    
+    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
