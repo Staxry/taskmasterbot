@@ -152,7 +152,6 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
             for admin_telegram_id in admins:
                 if admin_telegram_id != telegram_id:
                     try:
-                        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
                         keyboard = InlineKeyboardMarkup(inline_keyboard=[
                             [InlineKeyboardButton(text="📂 Открыть задачу", callback_data=f"task_{task_id}")]
                         ])
