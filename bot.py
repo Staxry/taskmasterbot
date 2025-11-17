@@ -900,6 +900,8 @@ async def callback_take_task(callback: CallbackQuery):
         
         task_id_db, title, description, priority, due_date, assigned_to_id, created_by_id, task_photo_file_id = task
         
+        logger.info(f"📋 Задача #{task_id_db} взята, фото в БД: {task_photo_file_id}")
+        
         if assigned_to_id is not None:
             await callback.answer("❌ Эта задача уже назначена другому сотруднику.", show_alert=True)
             return
@@ -952,6 +954,7 @@ async def callback_take_task(callback: CallbackQuery):
                 try:
                     if task_photo_file_id:
                         # Отправляем с фото
+                        logger.info(f"📸 Отправляем уведомление С ФОТО админу {creator_username}, file_id: {task_photo_file_id}")
                         await bot.send_photo(
                             chat_id=creator_telegram_id,
                             photo=task_photo_file_id,
@@ -959,14 +962,17 @@ async def callback_take_task(callback: CallbackQuery):
                             parse_mode='HTML',
                             reply_markup=task_keyboard
                         )
+                        logger.info(f"✅ Уведомление с фото отправлено")
                     else:
                         # Отправляем без фото
+                        logger.info(f"📝 Отправляем уведомление БЕЗ ФОТО админу {creator_username}")
                         await bot.send_message(
                             chat_id=creator_telegram_id,
                             text=notification_text,
                             parse_mode='HTML',
                             reply_markup=task_keyboard
                         )
+                        logger.info(f"✅ Уведомление без фото отправлено")
                     logger.info(f"✅ Task assignment notification sent to {creator_username}")
                 except Exception as notif_error:
                     logger.warning(f"⚠️ Could not send notification: {notif_error}")
@@ -1462,11 +1468,12 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
             assignee_telegram_id = None
         
         # Создаём задачу
+        logger.info(f"💾 Создаём задачу с фото: photo_file_id={photo_file_id}")
         cur.execute(
             """INSERT INTO tasks 
                (title, description, priority, status, due_date, assigned_to_id, created_by_id, task_photo_file_id, created_at, updated_at)
                VALUES (%s, %s, %s, 'pending', %s, %s, %s, %s, NOW(), NOW())
-               RETURNING id, title, priority, status""",
+               RETURNING id, title, priority, status, task_photo_file_id""",
             (
                 title,
                 description,
@@ -1480,6 +1487,8 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
         conn.commit()
         task = cur.fetchone()
         task_id = task[0]
+        saved_photo_id = task[4] if len(task) > 4 else None
+        logger.info(f"✅ Задача #{task_id} создана, сохранённое фото: {saved_photo_id}")
         
         priority_text = {
             'urgent': '🔴 Срочно',
@@ -1608,6 +1617,7 @@ async def process_task_photo(message: Message, state: FSMContext):
     """Обработать загруженное фото задачи"""
     # Получаем самую большую версию фото
     photo_file_id = message.photo[-1].file_id
+    logger.info(f"📸 Получено фото для задачи, file_id: {photo_file_id}")
     
     # Создаём задачу с фото
     await create_task_with_photo(message, state, photo_file_id)
