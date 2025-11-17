@@ -34,6 +34,8 @@ class CreateTaskStates(StatesGroup):
     waiting_for_priority = State()
     waiting_for_due_date = State()
     waiting_for_assignee = State()
+    asking_for_task_photo = State()
+    waiting_for_task_photo = State()
 
 
 class AddUserStates(StatesGroup):
@@ -1335,16 +1337,49 @@ async def process_due_date(callback: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("assignee_"))
 async def process_assignee(callback: CallbackQuery, state: FSMContext):
-    """Обработать выбор исполнителя и создать задачу"""
+    """Выбрать исполнителя и спросить про фото"""
     assignee_id = int(callback.data.split('_')[1])
     
-    telegram_id = str(callback.from_user.id)
-    username = callback.from_user.username
-    first_name = callback.from_user.first_name or ''
+    # Сохраняем исполнителя
+    await state.update_data(assignee_id=assignee_id)
+    await state.set_state(CreateTaskStates.asking_for_task_photo)
+    
+    # Спрашиваем про фото
+    photo_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Да, добавить фото", callback_data="task_photo_yes"),
+            InlineKeyboardButton(text="❌ Нет, без фото", callback_data="task_photo_no")
+        ]
+    ])
+    
+    await callback.message.edit_text(
+        "📸 <b>Добавить фото к задаче?</b>\n\n"
+        "Фото поможет лучше объяснить задачу исполнителю.",
+        parse_mode='HTML',
+        reply_markup=photo_keyboard
+    )
+    await callback.answer()
+
+
+async def create_task_with_photo(callback_or_message, state: FSMContext, photo_file_id=None):
+    """Создать задачу с фото или без"""
+    is_message = isinstance(callback_or_message, Message)
+    
+    if is_message:
+        telegram_id = str(callback_or_message.from_user.id)
+        username = callback_or_message.from_user.username
+        first_name = callback_or_message.from_user.first_name or ''
+    else:
+        telegram_id = str(callback_or_message.from_user.id)
+        username = callback_or_message.from_user.username
+        first_name = callback_or_message.from_user.first_name or ''
     
     user = get_or_create_user(telegram_id, username, first_name)
     if not user:
-        await callback.answer("❌ Доступ запрещён", show_alert=True)
+        if is_message:
+            await callback_or_message.answer("❌ Доступ запрещён")
+        else:
+            await callback_or_message.answer("❌ Доступ запрещён", show_alert=True)
         await state.clear()
         return
     
@@ -1353,31 +1388,39 @@ async def process_assignee(callback: CallbackQuery, state: FSMContext):
     description = data.get('description', '')
     priority = data.get('priority', 'medium')
     due_date = data.get('due_date', (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d'))
+    assignee_id = data.get('assignee_id')
     
     conn = get_db_connection()
     cur = conn.cursor()
     
     try:
-        # Получаем информацию об исполнителе
-        cur.execute(
-            "SELECT username, telegram_id FROM users WHERE id = %s",
-            (assignee_id,)
-        )
-        assignee = cur.fetchone()
-        
-        if not assignee:
-            await callback.answer("❌ Исполнитель не найден", show_alert=True)
-            await state.clear()
-            return
-        
-        assignee_username = assignee[0]
-        assignee_telegram_id = assignee[1]
+        # Получаем информацию об исполнителе (если есть)
+        if assignee_id:
+            cur.execute(
+                "SELECT username, telegram_id FROM users WHERE id = %s",
+                (assignee_id,)
+            )
+            assignee = cur.fetchone()
+            
+            if not assignee:
+                if is_message:
+                    await callback_or_message.answer("❌ Исполнитель не найден")
+                else:
+                    await callback_or_message.answer("❌ Исполнитель не найден", show_alert=True)
+                await state.clear()
+                return
+            
+            assignee_username = assignee[0]
+            assignee_telegram_id = assignee[1]
+        else:
+            assignee_username = None
+            assignee_telegram_id = None
         
         # Создаём задачу
         cur.execute(
             """INSERT INTO tasks 
-               (title, description, priority, status, due_date, assigned_to_id, created_by_id, created_at, updated_at)
-               VALUES (%s, %s, %s, 'pending', %s, %s, %s, NOW(), NOW())
+               (title, description, priority, status, due_date, assigned_to_id, created_by_id, task_photo_file_id, created_at, updated_at)
+               VALUES (%s, %s, %s, 'pending', %s, %s, %s, %s, NOW(), NOW())
                RETURNING id, title, priority, status""",
             (
                 title,
@@ -1385,7 +1428,8 @@ async def process_assignee(callback: CallbackQuery, state: FSMContext):
                 priority,
                 due_date,
                 assignee_id,
-                user['id']
+                user['id'],
+                photo_file_id
             )
         )
         conn.commit()
@@ -1399,24 +1443,46 @@ async def process_assignee(callback: CallbackQuery, state: FSMContext):
             'low': '🟢 Низкий'
         }.get(priority, priority)
         
-        await callback.message.edit_text(
-            f"✅ <b>Задача создана успешно!</b>\n\n"
-            f"ID: {task[0]}\n"
-            f"Название: {task[1]}\n"
-            f"Приоритет: {priority_text}\n"
-            f"Срок: 📅 {due_date}\n"
-            f"Исполнитель: @{assignee_username}\n"
-            f"Статус: ⏳ Ожидает\n\n"
-            f"📨 Уведомление отправлено исполнителю",
-            parse_mode='HTML',
-            reply_markup=get_main_keyboard(user['role'])
-        )
-        await callback.answer()
+        # Сообщение об успехе
+        success_msg = f"✅ <b>Задача создана успешно!</b>\n\n"
+        success_msg += f"ID: {task[0]}\n"
+        success_msg += f"Название: {task[1]}\n"
+        success_msg += f"Приоритет: {priority_text}\n"
+        success_msg += f"Срок: 📅 {due_date}\n"
+        
+        if assignee_username:
+            success_msg += f"Исполнитель: @{assignee_username}\n"
+        else:
+            success_msg += f"Исполнитель: 🆓 Не назначена (свободная)\n"
+        
+        success_msg += f"Статус: ⏳ Ожидает\n"
+        
+        if photo_file_id:
+            success_msg += f"\n📸 Фото прикреплено"
+        
+        if assignee_username:
+            success_msg += f"\n\n📨 Уведомление отправлено исполнителю"
+        
+        if is_message:
+            await callback_or_message.answer(
+                success_msg,
+                parse_mode='HTML',
+                reply_markup=get_main_keyboard(user['role'])
+            )
+        else:
+            await callback_or_message.message.edit_text(
+                success_msg,
+                parse_mode='HTML',
+                reply_markup=get_main_keyboard(user['role'])
+            )
+            await callback_or_message.answer()
+        
         await state.clear()
         
-        # Отправляем уведомление исполнителю
-        try:
-            notification_text = f"""📋 <b>Вам назначена новая задача!</b>
+        # Отправляем уведомление исполнителю (если назначен)
+        if assignee_telegram_id:
+            try:
+                notification_text = f"""📋 <b>Вам назначена новая задача!</b>
 
 <b>Задача #{task_id}</b>
 <b>Название:</b> {title}
@@ -1427,24 +1493,72 @@ async def process_assignee(callback: CallbackQuery, state: FSMContext):
 <b>Статус:</b> ⏳ Ожидает
 
 Используйте /start для просмотра задачи."""
-            
-            await bot.send_message(
-                chat_id=assignee_telegram_id,
-                text=notification_text,
-                parse_mode='HTML'
-            )
-            logger.info(f"✅ Notification sent to {assignee_username} (task #{task_id})")
-        except Exception as notif_error:
-            logger.warning(f"⚠️ Could not send notification to {assignee_username}: {notif_error}")
+                
+                if photo_file_id:
+                    # Отправляем с фото
+                    await bot.send_photo(
+                        chat_id=assignee_telegram_id,
+                        photo=photo_file_id,
+                        caption=notification_text,
+                        parse_mode='HTML'
+                    )
+                else:
+                    # Отправляем без фото
+                    await bot.send_message(
+                        chat_id=assignee_telegram_id,
+                        text=notification_text,
+                        parse_mode='HTML'
+                    )
+                logger.info(f"✅ Notification sent to {assignee_username} (task #{task_id})")
+            except Exception as notif_error:
+                logger.warning(f"⚠️ Could not send notification to {assignee_username}: {notif_error}")
         
-        logger.info(f"✅ Task created: {title} assigned to {assignee_username} by {username}")
+        logger.info(f"✅ Task created: {title} by {username}")
     
     except Exception as e:
         logger.error(f"Error creating task: {e}")
-        await callback.answer("❌ Ошибка при создании задачи", show_alert=True)
+        if is_message:
+            await callback_or_message.answer("❌ Ошибка при создании задачи")
+        else:
+            await callback_or_message.answer("❌ Ошибка при создании задачи", show_alert=True)
     finally:
         cur.close()
         conn.close()
+
+
+@dp.callback_query(F.data == "task_photo_yes")
+async def callback_task_photo_yes(callback: CallbackQuery, state: FSMContext):
+    """Пользователь хочет добавить фото к задаче"""
+    await state.set_state(CreateTaskStates.waiting_for_task_photo)
+    
+    cancel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⏭ Пропустить", callback_data="task_photo_no")]
+    ])
+    
+    await callback.message.edit_text(
+        "📸 <b>Загрузите фото</b>\n\n"
+        "Отправьте фотографию к задаче.\n"
+        "Можно отправить одно фото.",
+        parse_mode='HTML',
+        reply_markup=cancel_keyboard
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "task_photo_no")
+async def callback_task_photo_no(callback: CallbackQuery, state: FSMContext):
+    """Создать задачу без фото"""
+    await create_task_with_photo(callback, state, None)
+
+
+@dp.message(CreateTaskStates.waiting_for_task_photo, F.photo)
+async def process_task_photo(message: Message, state: FSMContext):
+    """Обработать загруженное фото задачи"""
+    # Получаем самую большую версию фото
+    photo_file_id = message.photo[-1].file_id
+    
+    # Создаём задачу с фото
+    await create_task_with_photo(message, state, photo_file_id)
 
 
 @dp.callback_query(F.data == "delete_task_menu")
