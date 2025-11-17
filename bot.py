@@ -158,6 +158,7 @@ def get_task_keyboard(task_id: int, current_status: str):
     statuses = {
         'pending': '⏳ Ожидает',
         'in_progress': '🔄 В работе',
+        'partially_completed': '🔶 Частично завершена',
         'completed': '✅ Завершена',
         'rejected': '❌ Отклонена'
     }
@@ -481,6 +482,7 @@ async def callback_my_tasks(callback: CallbackQuery):
         status_emoji = {
             'pending': '⏳',
             'in_progress': '🔄',
+            'partially_completed': '🔶',
             'completed': '✅',
             'rejected': '❌'
         }
@@ -563,6 +565,7 @@ async def callback_all_tasks(callback: CallbackQuery):
         status_emoji = {
             'pending': '⏳',
             'in_progress': '🔄',
+            'partially_completed': '🔶',
             'completed': '✅',
             'rejected': '❌'
         }
@@ -631,6 +634,7 @@ async def callback_task_details(callback: CallbackQuery):
         status_text = {
             'pending': '⏳ Ожидает',
             'in_progress': '🔄 В работе',
+            'partially_completed': '🔶 Частично завершена',
             'completed': '✅ Завершена',
             'rejected': '❌ Отклонена'
         }.get(status, status)
@@ -700,8 +704,8 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
             await callback.answer("❌ Вы можете обновлять только свои задачи.", show_alert=True)
             return
         
-        # Если меняем на "Завершена" - запрашиваем комментарий
-        if new_status == 'completed':
+        # Если меняем на "Завершена" или "Частично завершена" - запрашиваем комментарий
+        if new_status in ['completed', 'partially_completed']:
             await state.update_data(task_id=task_id, new_status=new_status)
             await state.set_state(CompleteTaskStates.waiting_for_comment)
             
@@ -709,10 +713,23 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
                 [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
             ])
             
+            if new_status == 'completed':
+                prompt_text = (
+                    "✅ <b>Завершение задачи</b>\n\n"
+                    "Напишите <b>комментарий</b> о выполненной работе:\n\n"
+                    "Например: 'Отчёт подготовлен и отправлен руководству'"
+                )
+            else:  # partially_completed
+                prompt_text = (
+                    "🔶 <b>Частичное завершение задачи</b>\n\n"
+                    "Напишите <b>комментарий</b>:\n"
+                    "• Что уже сделано\n"
+                    "• Что осталось доделать\n\n"
+                    "Например: 'Выполнено 70%. Осталось проверить данные и оформить выводы.'"
+                )
+            
             await callback.message.edit_text(
-                "✅ <b>Завершение задачи</b>\n\n"
-                "Напишите <b>комментарий</b> о выполненной работе:\n\n"
-                "Например: 'Отчёт подготовлен и отправлен руководству'",
+                prompt_text,
                 parse_mode='HTML',
                 reply_markup=cancel_keyboard
             )
@@ -751,6 +768,7 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
             status_display = {
                 'pending': '⏳ Ожидает',
                 'in_progress': '🔄 В работе',
+                'partially_completed': '🔶 Частично завершена',
                 'completed': '✅ Завершена',
                 'rejected': '❌ Отклонена'
             }.get(status, status)
@@ -840,10 +858,13 @@ async def process_completion_comment(message: Message, state: FSMContext):
             }.get(priority, priority)
             
             # Подтверждение пользователю
+            if new_status == 'completed':
+                confirmation = "✅ <b>Задача завершена!</b>\n\nКомментарий сохранён.\nСоздатель задачи получит уведомление."
+            else:  # partially_completed
+                confirmation = "🔶 <b>Задача частично завершена!</b>\n\nКомментарий сохранён.\nСоздатель задачи получит уведомление о прогрессе."
+            
             await message.answer(
-                f"✅ <b>Задача завершена!</b>\n\n"
-                f"Комментарий сохранён.\n"
-                f"Создатель задачи получит уведомление.",
+                confirmation,
                 parse_mode='HTML',
                 reply_markup=get_main_keyboard(user['role'])
             )
@@ -851,7 +872,8 @@ async def process_completion_comment(message: Message, state: FSMContext):
             # Отправляем уведомление создателю задачи
             if created_by_id and creator_telegram_id and creator_telegram_id != telegram_id:
                 try:
-                    notification_text = f"""✅ <b>Задача завершена!</b>
+                    if new_status == 'completed':
+                        notification_text = f"""✅ <b>Задача завершена!</b>
 
 <b>Задача #{task_id}</b>
 <b>Название:</b> {title}
@@ -862,6 +884,18 @@ async def process_completion_comment(message: Message, state: FSMContext):
 <b>Комментарий:</b> {comment}
 
 Используйте /start для просмотра задачи."""
+                    else:  # partially_completed
+                        notification_text = f"""🔶 <b>Задача частично завершена!</b>
+
+<b>Задача #{task_id}</b>
+<b>Название:</b> {title}
+<b>Приоритет:</b> {priority_text}
+<b>Срок:</b> 📅 {due_date}
+
+<b>Исполнитель:</b> @{username}
+<b>Отчёт о прогрессе:</b> {comment}
+
+Задача ещё в работе. Используйте /start для просмотра."""
                     
                     await bot.send_message(
                         chat_id=creator_telegram_id,
