@@ -104,6 +104,17 @@ def init_database():
             )
         """)
         
+        # Создание таблицы уведомлений
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS task_notifications (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+                notification_type VARCHAR(50) NOT NULL,
+                sent_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(task_id, notification_type)
+            )
+        """)
+        
         conn.commit()
         logger.info("✅ Database schema initialized successfully")
         

@@ -75,9 +75,16 @@ async def main():
     """
     Главная функция запуска бота
     """
+    notification_task = None
+    
     try:
         # Выполняем действия при старте
         await on_startup()
+        
+        # Запускаем фоновую задачу для уведомлений
+        from app.services.notifications import notification_scheduler
+        notification_task = asyncio.create_task(notification_scheduler(bot))
+        logger.info("🔔 Notification scheduler task created")
         
         # Запускаем polling
         logger.info("🔄 Starting polling...")
@@ -88,6 +95,15 @@ async def main():
     except Exception as e:
         logger.error(f"❌ Fatal error: {e}", exc_info=True)
     finally:
+        # Отменяем фоновую задачу перед shutdown
+        if notification_task and not notification_task.done():
+            logger.info("🔔 Cancelling notification scheduler...")
+            notification_task.cancel()
+            try:
+                await notification_task
+            except asyncio.CancelledError:
+                logger.info("✅ Notification scheduler cancelled")
+        
         # Выполняем действия при остановке
         await on_shutdown()
 
