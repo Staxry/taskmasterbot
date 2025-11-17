@@ -170,6 +170,14 @@ def get_task_keyboard(task_id: int, current_status: str, assigned_to_id: int = N
         buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="my_tasks")])
         return InlineKeyboardMarkup(inline_keyboard=buttons)
     
+    # Если задача завершена или частично завершена - показываем только кнопку "Вернуть в работу" для админов
+    if current_status in ['completed', 'partially_completed']:
+        if is_admin:
+            buttons.append([InlineKeyboardButton(text="🔄 Вернуть в работу", callback_data=f"reopen_{task_id}")])
+        buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="my_tasks")])
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+    
+    # Для остальных статусов показываем все доступные статусы
     statuses = {
         'pending': '⏳ Ожидает',
         'in_progress': '🔄 В работе',
@@ -661,7 +669,7 @@ async def callback_task_details(callback: CallbackQuery):
     try:
         cur.execute(
             """SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, 
-                      u.username, t.created_at, t.assigned_to_id
+                      u.username, t.created_at, t.assigned_to_id, t.completion_comment, t.photo_file_id
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
                WHERE t.id = %s""",
@@ -673,7 +681,7 @@ async def callback_task_details(callback: CallbackQuery):
             await callback.answer("❌ Задача не найдена.", show_alert=True)
             return
         
-        tid, title, description, status, priority, due_date, assigned_username, created_at, assigned_to_id = task
+        tid, title, description, status, priority, due_date, assigned_username, created_at, assigned_to_id, completion_comment, photo_file_id = task
         
         status_text = {
             'pending': '⏳ Ожидает',
@@ -701,28 +709,42 @@ async def callback_task_details(callback: CallbackQuery):
 <b>Создана:</b> {created_at.strftime('%Y-%m-%d %H:%M')}
 """
         
+        # Если задача завершена или частично завершена - показываем комментарий
+        if status in ['completed', 'partially_completed'] and completion_comment:
+            text += f"\n\n💬 <b>Комментарий:</b>\n{completion_comment}"
+        
         # Добавляем подсказку для неназначенных задач
         if assigned_to_id is None:
-            text += "\n💡 Эта задача свободна - любой сотрудник может взять её в работу!"
-        else:
-            text += "\nВыберите новый статус:"
+            text += "\n\n💡 Эта задача свободна - любой сотрудник может взять её в работу!"
+        elif status not in ['completed', 'partially_completed']:
+            text += "\n\nВыберите новый статус:"
         
-        # Проверяем, есть ли в сообщении фото или текст
-        try:
-            # Пытаемся отредактировать как текстовое сообщение
-            await callback.message.edit_text(
-                text,
-                parse_mode='HTML',
-                reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
-            )
-        except Exception:
-            # Если не получилось (например, сообщение с фото), удаляем и отправляем новое
+        # Если задача завершена с фото - отправляем фото с текстом
+        if status in ['completed', 'partially_completed'] and photo_file_id:
             await callback.message.delete()
-            await callback.message.answer(
-                text,
+            await callback.message.answer_photo(
+                photo=photo_file_id,
+                caption=text,
                 parse_mode='HTML',
                 reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
             )
+        else:
+            # Проверяем, есть ли в сообщении фото или текст
+            try:
+                # Пытаемся отредактировать как текстовое сообщение
+                await callback.message.edit_text(
+                    text,
+                    parse_mode='HTML',
+                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
+                )
+            except Exception:
+                # Если не получилось (например, сообщение с фото), удаляем и отправляем новое
+                await callback.message.delete()
+                await callback.message.answer(
+                    text,
+                    parse_mode='HTML',
+                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
+                )
         
         await callback.answer()
     
@@ -816,7 +838,7 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
         # Обновляем отображение задачи с новым статусом
         cur.execute(
             """SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, 
-                      u.username, t.created_at
+                      u.username, t.created_at, t.assigned_to_id, t.completion_comment, t.photo_file_id
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
                WHERE t.id = %s""",
@@ -825,7 +847,7 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
         updated_task = cur.fetchone()
         
         if updated_task:
-            tid, title, description, status, priority, due_date, assigned_username, created_at = updated_task
+            tid, title, description, status, priority, due_date, assigned_username, created_at, assigned_to_id, completion_comment, photo_file_id = updated_task
             
             status_display = {
                 'pending': '⏳ Ожидает',
@@ -851,13 +873,20 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
 <b>Срок:</b> {due_date}
 <b>Назначена:</b> @{assigned_username or 'Не назначена'}
 <b>Создана:</b> {created_at.strftime('%Y-%m-%d %H:%M')}
-
-Выберите новый статус:"""
+"""
+            
+            # Добавляем комментарий для завершенных задач
+            if status in ['completed', 'partially_completed'] and completion_comment:
+                text += f"\n💬 <b>Комментарий:</b>\n{completion_comment}\n"
+            
+            # Добавляем подсказку только для незавершенных задач
+            if status not in ['completed', 'partially_completed']:
+                text += "\nВыберите новый статус:"
             
             await callback.message.edit_text(
                 text,
                 parse_mode='HTML',
-                reply_markup=get_task_keyboard(task_id, status)
+                reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
             )
     
     except Exception as e:
@@ -998,6 +1027,126 @@ async def callback_take_task(callback: CallbackQuery):
     
     except Exception as e:
         logger.error(f"Error taking task: {e}", exc_info=True)
+        await callback.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@dp.callback_query(F.data.startswith("reopen_"))
+async def callback_reopen_task(callback: CallbackQuery):
+    """Вернуть завершенную задачу в работу (только для админов)"""
+    task_id = int(callback.data.split('_')[1])
+    
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username
+    first_name = callback.from_user.first_name or ''
+    
+    user = get_or_create_user(telegram_id, username, first_name)
+    if not user:
+        await callback.answer("❌ Доступ запрещён", show_alert=True)
+        return
+    
+    # Проверяем что пользователь - админ
+    if user['role'] != 'admin':
+        await callback.answer("❌ Только админы могут возвращать задачи в работу", show_alert=True)
+        return
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Получаем информацию о задаче
+        cur.execute(
+            "SELECT status FROM tasks WHERE id = %s",
+            (task_id,)
+        )
+        task = cur.fetchone()
+        
+        if not task:
+            await callback.answer("❌ Задача не найдена.", show_alert=True)
+            return
+        
+        current_status = task[0]
+        
+        # Проверяем что задача действительно завершена
+        if current_status not in ['completed', 'partially_completed']:
+            await callback.answer("❌ Эта задача не завершена.", show_alert=True)
+            return
+        
+        # Возвращаем задачу в работу и очищаем комментарий и фото завершения
+        cur.execute(
+            """UPDATE tasks 
+               SET status = 'in_progress', 
+                   completion_comment = NULL, 
+                   photo_file_id = NULL, 
+                   updated_at = NOW() 
+               WHERE id = %s""",
+            (task_id,)
+        )
+        conn.commit()
+        
+        await callback.answer("✅ Задача возвращена в работу", show_alert=True)
+        
+        # Обновляем отображение задачи
+        cur.execute(
+            """SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, 
+                      u.username, t.created_at, t.assigned_to_id
+               FROM tasks t
+               LEFT JOIN users u ON t.assigned_to_id = u.id
+               WHERE t.id = %s""",
+            (task_id,)
+        )
+        updated_task = cur.fetchone()
+        
+        if updated_task:
+            tid, title, description, status, priority, due_date, assigned_username, created_at, assigned_to_id = updated_task
+            
+            status_text = {
+                'pending': '⏳ Ожидает',
+                'in_progress': '🔄 В работе',
+                'partially_completed': '🔶 Частично завершена',
+                'completed': '✅ Завершена',
+                'rejected': '❌ Отклонена'
+            }.get(status, status)
+            
+            priority_text = {
+                'urgent': '🔴 Срочно',
+                'high': '🟠 Высокий',
+                'medium': '🟡 Средний',
+                'low': '🟢 Низкий'
+            }.get(priority, priority)
+            
+            text = f"""📋 <b>Задача #{tid}</b>
+
+<b>Название:</b> {title}
+<b>Описание:</b> {description or 'Нет описания'}
+<b>Статус:</b> {status_text}
+<b>Приоритет:</b> {priority_text}
+<b>Срок:</b> {due_date}
+<b>Назначена:</b> @{assigned_username or '🆓 Свободна (можно взять)'}
+<b>Создана:</b> {created_at.strftime('%Y-%m-%d %H:%M')}
+
+Выберите новый статус:"""
+            
+            try:
+                await callback.message.edit_text(
+                    text,
+                    parse_mode='HTML',
+                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
+                )
+            except Exception:
+                await callback.message.delete()
+                await callback.message.answer(
+                    text,
+                    parse_mode='HTML',
+                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
+                )
+        
+        logger.info(f"✅ Admin {username} reopened task #{task_id}")
+    
+    except Exception as e:
+        logger.error(f"Error reopening task: {e}", exc_info=True)
         await callback.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
     finally:
         cur.close()
