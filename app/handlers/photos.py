@@ -25,16 +25,27 @@ async def callback_photo_yes(callback: CallbackQuery, state: FSMContext):
     await state.set_state(CompleteTaskStates.waiting_for_photo)
     
     cancel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⏭ Пропустить", callback_data="photo_no")]
+        [InlineKeyboardButton(text="⏭ Пропустить", callback_data="photo_no")],
+        [InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")]
     ])
     
-    await callback.message.edit_text(
-        "📸 <b>Загрузите фото</b>\n\n"
-        "Отправьте фотографию результата работы.\n"
-        "Можно отправить одно фото.",
-        parse_mode='HTML',
-        reply_markup=cancel_keyboard
-    )
+    try:
+        await callback.message.edit_text(
+            "📸 <b>Загрузите фото</b>\n\n"
+            "Отправьте фотографию результата работы.\n"
+            "Можно отправить одно фото.",
+            parse_mode='HTML',
+            reply_markup=cancel_keyboard
+        )
+    except Exception:
+        await callback.message.delete()
+        await callback.message.answer(
+            "📸 <b>Загрузите фото</b>\n\n"
+            "Отправьте фотографию результата работы.\n"
+            "Можно отправить одно фото.",
+            parse_mode='HTML',
+            reply_markup=cancel_keyboard
+        )
     await callback.answer()
 
 
@@ -292,16 +303,27 @@ async def callback_task_photo_yes(callback: CallbackQuery, state: FSMContext):
     await state.set_state(CreateTaskStates.waiting_for_task_photo)
     
     cancel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⏭ Пропустить", callback_data="task_photo_no")]
+        [InlineKeyboardButton(text="⏭ Пропустить", callback_data="task_photo_no")],
+        [InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")]
     ])
     
-    await callback.message.edit_text(
-        "📸 <b>Загрузите фото</b>\n\n"
-        "Отправьте фотографию к задаче.\n"
-        "Можно отправить одно фото.",
-        parse_mode='HTML',
-        reply_markup=cancel_keyboard
-    )
+    try:
+        await callback.message.edit_text(
+            "📸 <b>Загрузите фото</b>\n\n"
+            "Отправьте фотографию к задаче.\n"
+            "Можно отправить одно фото.",
+            parse_mode='HTML',
+            reply_markup=cancel_keyboard
+        )
+    except Exception:
+        await callback.message.delete()
+        await callback.message.answer(
+            "📸 <b>Загрузите фото</b>\n\n"
+            "Отправьте фотографию к задаче.\n"
+            "Можно отправить одно фото.",
+            parse_mode='HTML',
+            reply_markup=cancel_keyboard
+        )
     await callback.answer()
 
 

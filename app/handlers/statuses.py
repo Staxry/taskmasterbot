@@ -64,7 +64,8 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
             await state.set_state(CompleteTaskStates.waiting_for_comment)
             
             cancel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+                [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
+                [InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")]
             ])
             
             if new_status == 'completed':

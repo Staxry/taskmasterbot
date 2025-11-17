@@ -116,7 +116,8 @@ async def callback_add_admin(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AddUserStates.waiting_for_username)
     
     cancel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
+        [InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")]
     ])
     
     logger.debug(f"📝 Starting add admin flow for {username}")
@@ -150,7 +151,8 @@ async def callback_add_employee(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AddUserStates.waiting_for_username)
     
     cancel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
+        [InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")]
     ])
     
     logger.debug(f"📝 Starting add employee flow for {username}")
@@ -274,10 +276,17 @@ async def callback_my_tasks(callback: CallbackQuery):
         logger.info(f"📊 Found {len(tasks)} tasks for {username}")
         
         if not tasks:
-            await callback.message.edit_text(
-                "📋 У вас пока нет задач.",
-                reply_markup=get_main_keyboard(user['role'])
-            )
+            try:
+                await callback.message.edit_text(
+                    "📋 У вас пока нет задач.",
+                    reply_markup=get_main_keyboard(user['role'])
+                )
+            except Exception:
+                await callback.message.delete()
+                await callback.message.answer(
+                    "📋 У вас пока нет задач.",
+                    reply_markup=get_main_keyboard(user['role'])
+                )
             await callback.answer()
             return
         
@@ -319,11 +328,19 @@ async def callback_my_tasks(callback: CallbackQuery):
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
-        await callback.message.edit_text(
-            "📋 <b>Выберите задачу:</b>",
-            parse_mode='HTML',
-            reply_markup=keyboard
-        )
+        try:
+            await callback.message.edit_text(
+                "📋 <b>Выберите задачу:</b>",
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+        except Exception:
+            await callback.message.delete()
+            await callback.message.answer(
+                "📋 <b>Выберите задачу:</b>",
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
         await callback.answer()
     
     finally:
@@ -681,7 +698,8 @@ async def callback_create_task(callback: CallbackQuery, state: FSMContext):
     await state.set_state(CreateTaskStates.waiting_for_title)
     
     cancel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
+        [InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")]
     ])
     
     logger.debug(f"📝 Starting create task flow for {username}")
@@ -705,7 +723,8 @@ async def process_task_title(message: Message, state: FSMContext):
     
     skip_keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⏭ Пропустить", callback_data="skip_description")],
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
+        [InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")]
     ])
     
     await message.answer(
