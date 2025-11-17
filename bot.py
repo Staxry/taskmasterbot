@@ -32,6 +32,7 @@ class CreateTaskStates(StatesGroup):
     waiting_for_title = State()
     waiting_for_description = State()
     waiting_for_priority = State()
+    waiting_for_assignee = State()
 
 
 class AddUserStates(StatesGroup):
@@ -187,6 +188,37 @@ def get_priority_keyboard():
         [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_users_keyboard():
+    """Клавиатура для выбора исполнителя"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        cur.execute(
+            """SELECT id, username, role FROM users 
+               ORDER BY role DESC, username ASC"""
+        )
+        users = cur.fetchall()
+        
+        buttons = []
+        
+        for user_id, username, role in users:
+            role_emoji = "👨‍💼" if role == "admin" else "👤"
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"{role_emoji} @{username}",
+                    callback_data=f"assignee_{user_id}"
+                )
+            ])
+        
+        buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+        
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+    finally:
+        cur.close()
+        conn.close()
 
 
 @dp.message(CommandStart())
@@ -743,8 +775,24 @@ async def process_task_description(message: Message, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("priority_"))
 async def process_priority(callback: CallbackQuery, state: FSMContext):
-    """Обработать выбор приоритета"""
+    """Обработать выбор приоритета и перейти к выбору исполнителя"""
     priority = callback.data.split('_')[1]
+    
+    await state.update_data(priority=priority)
+    await state.set_state(CreateTaskStates.waiting_for_assignee)
+    
+    await callback.message.edit_text(
+        "👥 <b>Выберите исполнителя задачи:</b>",
+        parse_mode='HTML',
+        reply_markup=get_users_keyboard()
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("assignee_"))
+async def process_assignee(callback: CallbackQuery, state: FSMContext):
+    """Обработать выбор исполнителя и создать задачу"""
+    assignee_id = int(callback.data.split('_')[1])
     
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
@@ -759,11 +807,25 @@ async def process_priority(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     title = data.get('title', '')
     description = data.get('description', '')
+    priority = data.get('priority', 'medium')
     
     conn = get_db_connection()
     cur = conn.cursor()
     
     try:
+        # Получаем информацию об исполнителе
+        cur.execute(
+            "SELECT username FROM users WHERE id = %s",
+            (assignee_id,)
+        )
+        assignee = cur.fetchone()
+        
+        if not assignee:
+            await callback.answer("❌ Исполнитель не найден", show_alert=True)
+            await state.clear()
+            return
+        
+        # Создаём задачу
         cur.execute(
             """INSERT INTO tasks 
                (title, description, priority, status, due_date, assigned_to_id, created_by_id, created_at, updated_at)
@@ -774,7 +836,7 @@ async def process_priority(callback: CallbackQuery, state: FSMContext):
                 description,
                 priority,
                 (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d'),
-                user['id'],
+                assignee_id,
                 user['id']
             )
         )
@@ -793,12 +855,15 @@ async def process_priority(callback: CallbackQuery, state: FSMContext):
             f"ID: {task[0]}\n"
             f"Название: {task[1]}\n"
             f"Приоритет: {priority_text}\n"
+            f"Исполнитель: @{assignee[0]}\n"
             f"Статус: ⏳ Ожидает",
             parse_mode='HTML',
             reply_markup=get_main_keyboard(user['role'])
         )
         await callback.answer()
         await state.clear()
+        
+        logger.info(f"✅ Task created: {title} assigned to {assignee[0]} by {username}")
     
     except Exception as e:
         logger.error(f"Error creating task: {e}")
