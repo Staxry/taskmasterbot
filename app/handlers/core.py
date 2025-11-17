@@ -1354,11 +1354,11 @@ async def callback_remove_employee(callback: CallbackQuery):
             return
         
         buttons = []
-        for emp_id, emp_username in employees:
+        for emp in employees:
             buttons.append([
                 InlineKeyboardButton(
-                    text=f"🗑️ @{emp_username}",
-                    callback_data=f"confirmremove_{emp_id}_employee"
+                    text=f"🗑️ @{emp['username']}",
+                    callback_data=f"confirmremove_{emp['id']}_employee"
                 )
             ])
         
@@ -1415,7 +1415,8 @@ async def callback_confirm_remove_user(callback: CallbackQuery):
             await callback.answer("❌ Пользователь не найден.", show_alert=True)
             return
         
-        username_to_remove, role_to_remove = user_to_remove
+        username_to_remove = user_to_remove['username']
+        role_to_remove = user_to_remove['role']
         
         logger.debug(f"🗑️ Removing user: {username_to_remove} ({role_to_remove})")
         
