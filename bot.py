@@ -638,7 +638,7 @@ async def callback_all_tasks(callback: CallbackQuery):
         conn.close()
 
 
-@dp.callback_query(F.data.startswith("task_"))
+@dp.callback_query(F.data.startswith("task_") & ~F.data.in_({"task_photo_yes", "task_photo_no"}))
 async def callback_task_details(callback: CallbackQuery):
     """Показать детали задачи"""
     task_id = int(callback.data.split('_')[1])
