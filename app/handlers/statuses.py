@@ -13,6 +13,7 @@ from app.keyboards.task_keyboards import get_task_keyboard
 from app.keyboards.main_menu import get_main_keyboard
 from app.states import CompleteTaskStates
 from app.logging_config import get_logger
+from app.services.notifications import get_all_admins
 
 logger = get_logger(__name__)
 
@@ -42,7 +43,9 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
     
     try:
         cur.execute(
-            "SELECT assigned_to_id FROM tasks WHERE id = ?",
+            """SELECT t.id, t.title, t.assigned_to_id, t.priority, t.due_date 
+               FROM tasks t 
+               WHERE t.id = ?""",
             (task_id,)
         )
         task = cur.fetchone()
@@ -51,6 +54,8 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
             logger.warning(f"⚠️ Task #{task_id} not found")
             await callback.answer("❌ Задача не найдена.", show_alert=True)
             return
+        
+        old_assigned_to_id = task['assigned_to_id']
         
         if task['assigned_to_id'] != user['id'] and user['role'] != 'admin':
             logger.warning(f"⛔ User {username} tried to update task #{task_id} without permissions")
@@ -101,10 +106,17 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
         
         logger.debug(f"💾 Updating task #{task_id} status to {new_status}")
         
-        cur.execute(
-            "UPDATE tasks SET status = ?, updated_at = datetime('now') WHERE id = ?",
-            (new_status, task_id)
-        )
+        if new_status == 'in_progress' and old_assigned_to_id is None:
+            logger.info(f"📌 Assigning unassigned task #{task_id} to {username}")
+            cur.execute(
+                "UPDATE tasks SET status = ?, assigned_to_id = ?, updated_at = datetime('now') WHERE id = ?",
+                (new_status, user['id'], task_id)
+            )
+        else:
+            cur.execute(
+                "UPDATE tasks SET status = ?, updated_at = datetime('now') WHERE id = ?",
+                (new_status, task_id)
+            )
         conn.commit()
         
         status_text = {
@@ -114,6 +126,45 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
         }.get(new_status, new_status)
         
         logger.info(f"✅ Task #{task_id} status updated to {new_status}")
+        
+        if new_status == 'in_progress' and old_assigned_to_id is None:
+            logger.info(f"📧 Sending admin notifications for task #{task_id} taken by {username}")
+            
+            priority_emoji = {
+                'urgent': '🔴',
+                'high': '🟠',
+                'medium': '🟡',
+                'low': '🟢'
+            }.get(task['priority'], '⚪')
+            
+            admin_message = (
+                f"🔔 <b>Задача взята в работу</b>\n\n"
+                f"{priority_emoji} <b>#{task_id}:</b> {task['title']}\n\n"
+                f"👤 <b>Исполнитель:</b> @{username}\n"
+                f"📅 <b>Срок:</b> {task['due_date']}\n\n"
+                f"Задача была свободной и взята в работу пользователем."
+            )
+            
+            admins = get_all_admins()
+            from app.main import bot
+            
+            for admin_telegram_id in admins:
+                if admin_telegram_id != telegram_id:
+                    try:
+                        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="📂 Открыть задачу", callback_data=f"task_{task_id}")]
+                        ])
+                        
+                        await bot.send_message(
+                            chat_id=admin_telegram_id,
+                            text=admin_message,
+                            parse_mode='HTML',
+                            reply_markup=keyboard
+                        )
+                        logger.info(f"✅ Admin notification sent to {admin_telegram_id} for task #{task_id}")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to send admin notification to {admin_telegram_id}: {e}")
         
         await callback.answer(f"✅ Статус обновлён на: {status_text}", show_alert=True)
         
