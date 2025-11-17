@@ -216,3 +216,5 @@ The current implementation uses **Polling** due to its advantages:
   - All cancel/skip keyboards
   
 This ensures users can exit to main menu from any point in the workflow without getting stuck.
+
+- **Chat clearing**: When returning to main menu or canceling operations, previous messages are now deleted to keep chat clean and organized. FSM states are properly cleared.

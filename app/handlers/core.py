@@ -1255,11 +1255,15 @@ async def callback_cancel(callback: CallbackQuery, state: FSMContext):
     
     user = get_or_create_user(telegram_id, username, first_name)
     if not user:
-        await callback.message.edit_text("❌ Доступ запрещён")
-        await callback.answer()
+        await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
     
-    await callback.message.edit_text(
+    try:
+        await callback.message.delete()
+    except Exception:
+        logger.debug("⚠️ Could not delete message during cancel")
+    
+    await callback.message.answer(
         "❌ Операция отменена.\n\nВыберите действие:",
         reply_markup=get_main_keyboard(user['role'])
     )
@@ -1267,7 +1271,7 @@ async def callback_cancel(callback: CallbackQuery, state: FSMContext):
 
 
 @core_router.callback_query(F.data == "back_to_main")
-async def callback_back_to_main(callback: CallbackQuery):
+async def callback_back_to_main(callback: CallbackQuery, state: FSMContext):
     """Вернуться в главное меню"""
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
@@ -1275,15 +1279,21 @@ async def callback_back_to_main(callback: CallbackQuery):
     
     logger.info(f"🔙 Back to main menu by {username}")
     
+    await state.clear()
+    
     user = get_or_create_user(telegram_id, username, first_name)
     if not user:
-        await callback.message.edit_text("❌ Доступ запрещён")
-        await callback.answer()
+        await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
+    
+    try:
+        await callback.message.delete()
+    except Exception:
+        logger.debug("⚠️ Could not delete message during back_to_main")
     
     role_text = "👨‍💼 Администратор" if user['role'] == 'admin' else "👤 Сотрудник"
     
-    await callback.message.edit_text(
+    await callback.message.answer(
         f"👋 Привет, {user['username']}!\n\n"
         f"Роль: <b>{role_text}</b>\n\n"
         f"Выберите действие:",
