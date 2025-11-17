@@ -15,6 +15,30 @@ BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 # Примеры: 'Europe/Moscow', 'Europe/Kiev', 'Asia/Almaty', 'Europe/Minsk'
 TIMEZONE = pytz.timezone(os.getenv('TIMEZONE', 'Europe/Moscow'))
 
+
+def get_now():
+    """Получить текущее время в настроенном часовом поясе"""
+    from datetime import datetime
+    return datetime.now(TIMEZONE)
+
+
+def combine_datetime(date_str: str, time_str: str):
+    """
+    Объединить дату и время в datetime с часовым поясом
+    
+    Args:
+        date_str: Дата в формате YYYY-MM-DD
+        time_str: Время в формате HH:MM
+    
+    Returns:
+        datetime: Datetime с настроенным часовым поясом
+    """
+    from datetime import datetime
+    # Парсим дату и время
+    naive_dt = datetime.strptime(f"{date_str} {time_str}", '%Y-%m-%d %H:%M')
+    # Добавляем часовой пояс
+    return TIMEZONE.localize(naive_dt)
+
 # Database Configuration
 DATABASE_URL = os.getenv('DATABASE_URL')
 

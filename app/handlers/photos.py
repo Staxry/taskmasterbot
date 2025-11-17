@@ -13,6 +13,7 @@ from app.services.users import get_or_create_user
 from app.keyboards.main_menu import get_main_keyboard
 from app.states import CompleteTaskStates, CreateTaskStates
 from app.logging_config import get_logger
+from app.config import get_now, combine_datetime
 
 logger = get_logger(__name__)
 
@@ -136,7 +137,7 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
 <b>Задача #{task_id}</b>
 <b>Название:</b> {title}
 <b>Приоритет:</b> {priority_text}
-<b>Срок:</b> 📅 {due_date}
+<b>Срок:</b> 📅 {due_datetime.strftime('%d.%m.%Y %H:%M')} (МСК)
 
 <b>Исполнитель:</b> @{username}
 <b>Отчёт о прогрессе:</b> {comment}
@@ -260,7 +261,7 @@ async def process_completion_photo(message: Message, state: FSMContext):
 <b>Задача #{task_id}</b>
 <b>Название:</b> {title}
 <b>Приоритет:</b> {priority_text}
-<b>Срок:</b> 📅 {due_date}
+<b>Срок:</b> 📅 {due_datetime.strftime('%d.%m.%Y %H:%M')} (МСК)
 
 <b>Исполнитель:</b> @{username}
 <b>Отчёт о прогрессе:</b> {comment}
@@ -377,10 +378,21 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
     title = data.get('title', '')
     description = data.get('description', '')
     priority = data.get('priority', 'medium')
-    due_date = data.get('due_date', (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d'))
+    
+    # Получаем дату и время, по умолчанию + 7 дней 23:59
+    due_date_str = data.get('due_date')
+    due_time_str = data.get('due_time', '23:59')
+    
+    if not due_date_str:
+        # По умолчанию: через 7 дней
+        default_due = get_now() + timedelta(days=7)
+        due_date_str = default_due.strftime('%Y-%m-%d')
+    
+    # Комбинируем дату и время в TIMESTAMP с часовым поясом
+    due_datetime = combine_datetime(due_date_str, due_time_str)
     assignee_id = data.get('assignee_id')
     
-    logger.debug(f"📋 Task data: title={title[:30]}, priority={priority}, due_date={due_date}, assignee_id={assignee_id}")
+    logger.debug(f"📋 Task data: title={title[:30]}, priority={priority}, due_datetime={due_datetime}, assignee_id={assignee_id}")
     
     conn = get_db_connection()
     cur = conn.cursor()
@@ -419,7 +431,7 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
                 title,
                 description,
                 priority,
-                due_date,
+                due_datetime,
                 assignee_id,
                 user['id'],
                 photo_file_id
@@ -443,7 +455,7 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
         success_msg += f"ID: {task[0]}\n"
         success_msg += f"Название: {task[1]}\n"
         success_msg += f"Приоритет: {priority_text}\n"
-        success_msg += f"Срок: 📅 {due_date}\n"
+        success_msg += f"Срок: 📅 {due_datetime.strftime('%d.%m.%Y %H:%M')} (МСК)\n"
         
         if assignee_username:
             success_msg += f"Исполнитель: @{assignee_username}\n"
@@ -482,7 +494,7 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
 <b>Название:</b> {title}
 <b>Описание:</b> {description or 'Нет описания'}
 <b>Приоритет:</b> {priority_text}
-<b>Срок:</b> 📅 {due_date}
+<b>Срок:</b> 📅 {due_datetime.strftime('%d.%m.%Y %H:%M')} (МСК)
 <b>Создал:</b> @{username}
 <b>Статус:</b> ⏳ Ожидает
 

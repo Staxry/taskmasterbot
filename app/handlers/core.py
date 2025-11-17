@@ -12,7 +12,7 @@ from app.handlers import core_router
 from app.database import get_db_connection
 from app.services.users import get_or_create_user
 from app.keyboards.main_menu import get_main_keyboard
-from app.keyboards.task_keyboards import get_task_keyboard, get_priority_keyboard, get_due_date_keyboard
+from app.keyboards.task_keyboards import get_task_keyboard, get_priority_keyboard, get_due_date_keyboard, get_due_time_keyboard
 from app.keyboards.user_keyboards import get_users_keyboard
 from app.states import CreateTaskStates, AddUserStates, SearchTaskStates
 from app.logging_config import get_logger
@@ -862,7 +862,7 @@ async def process_priority(callback: CallbackQuery, state: FSMContext):
 
 @core_router.callback_query(F.data.startswith("due_"))
 async def process_due_date(callback: CallbackQuery, state: FSMContext):
-    """Обработать выбор срока и перейти к выбору исполнителя"""
+    """Обработать выбор срока и перейти к выбору времени"""
     due_date = callback.data.split('_', 1)[1]
     
     if due_date == "manual":
@@ -880,12 +880,13 @@ async def process_due_date(callback: CallbackQuery, state: FSMContext):
     logger.info(f"📅 Task due date selected: {due_date}")
     
     await state.update_data(due_date=due_date)
-    await state.set_state(CreateTaskStates.waiting_for_assignee)
+    await state.set_state(CreateTaskStates.waiting_for_due_time)
     
     await callback.message.edit_text(
-        "👥 <b>Выберите исполнителя задачи:</b>",
+        f"⏰ <b>Выберите время завершения задачи</b>\n\n"
+        f"Дата: <code>{due_date}</code>",
         parse_mode='HTML',
-        reply_markup=get_users_keyboard()
+        reply_markup=get_due_time_keyboard()
     )
     await callback.answer()
 
@@ -922,10 +923,82 @@ async def process_manual_due_date(message: Message, state: FSMContext):
     logger.info(f"✅ Manual due date parsed: {due_date}")
     
     await state.update_data(due_date=due_date)
-    await state.set_state(CreateTaskStates.waiting_for_assignee)
+    await state.set_state(CreateTaskStates.waiting_for_due_time)
     
     await message.answer(
-        "👥 <b>Выберите исполнителя задачи:</b>",
+        f"⏰ <b>Выберите время завершения задачи</b>\n\n"
+        f"Дата: <code>{due_date}</code>",
+        parse_mode='HTML',
+        reply_markup=get_due_time_keyboard()
+    )
+
+
+@core_router.callback_query(F.data.startswith("time_"))
+async def process_due_time(callback: CallbackQuery, state: FSMContext):
+    """Обработать выбор времени и перейти к выбору исполнителя"""
+    time_value = callback.data.split('_', 1)[1]
+    
+    if time_value == "manual":
+        logger.debug("✍️ Manual time input requested")
+        await state.set_state(CreateTaskStates.waiting_for_manual_due_time)
+        await callback.message.edit_text(
+            "✍️ <b>Введите время вручную</b>\n\n"
+            "Формат: <code>ЧЧ:ММ</code> (например: 15:30 или 09:00)\n\n"
+            "Время указывается в часовом поясе <b>Europe/Moscow (UTC+3)</b>",
+            parse_mode='HTML'
+        )
+        await callback.answer()
+        return
+    
+    logger.info(f"⏰ Task due time selected: {time_value}")
+    
+    await state.update_data(due_time=time_value)
+    await state.set_state(CreateTaskStates.waiting_for_assignee)
+    
+    data = await state.get_data()
+    due_date = data.get('due_date', 'не указана')
+    
+    await callback.message.edit_text(
+        f"👥 <b>Выберите исполнителя задачи:</b>\n\n"
+        f"📅 Срок: <code>{due_date} {time_value}</code>",
+        parse_mode='HTML',
+        reply_markup=get_users_keyboard()
+    )
+    await callback.answer()
+
+
+@core_router.message(CreateTaskStates.waiting_for_manual_due_time)
+async def process_manual_due_time(message: Message, state: FSMContext):
+    """Обработать ручной ввод времени"""
+    time_text = message.text.strip()
+    
+    logger.info(f"⏰ Manual due time input: {time_text}")
+    
+    try:
+        parsed_time = datetime.strptime(time_text, '%H:%M')
+        due_time = parsed_time.strftime('%H:%M')
+    except ValueError as e:
+        logger.warning(f"⚠️ Invalid time format: {time_text} - {e}")
+        await message.answer(
+            "❌ <b>Неверный формат времени!</b>\n\n"
+            "Используйте формат <code>ЧЧ:ММ</code>\n"
+            "Примеры: 15:30, 09:00, 23:59\n\n"
+            "Попробуйте ещё раз:",
+            parse_mode='HTML'
+        )
+        return
+    
+    logger.info(f"✅ Manual due time parsed: {due_time}")
+    
+    await state.update_data(due_time=due_time)
+    await state.set_state(CreateTaskStates.waiting_for_assignee)
+    
+    data = await state.get_data()
+    due_date = data.get('due_date', 'не указана')
+    
+    await message.answer(
+        f"👥 <b>Выберите исполнителя задачи:</b>\n\n"
+        f"📅 Срок: <code>{due_date} {due_time}</code>",
         parse_mode='HTML',
         reply_markup=get_users_keyboard()
     )
