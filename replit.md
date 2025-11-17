@@ -1,8 +1,19 @@
 # Overview
 
-This project is a full-featured asynchronous Telegram bot designed for task management. Built with Python and the `aiogram` library, it operates via commands using polling, ensuring free operation without AI costs. The system offers a robust, production-ready implementation with a modular architecture, role-based access for task management (admin/employee), and utilizes **SQLite** for local data storage. Its core capabilities include interactive inline buttons for all commands, a whitelist authorization system, FSM for task and user management, error handling, task photos, automated deadline notifications (24h/3h reminders and overdue alerts), advanced statistics with Excel export, pagination, search, **full timezone support with precise time selection**, and **consistent display of user real names from Telegram profiles** in the format "First Last (@username)" throughout the entire interface. The project aims to provide an efficient and cost-effective solution for team task coordination with proactive deadline management and accurate time tracking in the Kaliningrad timezone (UTC+2).
+This project is a full-featured asynchronous Telegram bot designed for task management. Built with Python and the `aiogram` library, it operates via commands using polling, ensuring free operation without AI costs. The system offers a robust, production-ready implementation with a modular architecture, role-based access for task management (admin/employee), and utilizes **SQLite** for local data storage. Its core capabilities include interactive inline buttons for all commands, a whitelist authorization system, FSM for task and user management, error handling, task photos, automated deadline notifications (24h/3h/1h reminders and overdue alerts checked every 5 minutes), advanced statistics with Excel export, pagination, search, **full timezone support with precise time selection**, and **consistent display of user real names from Telegram profiles** in the format "First Last (@username)" throughout the entire interface. The project aims to provide an efficient and cost-effective solution for team task coordination with proactive deadline management and accurate time tracking in the Kaliningrad timezone (UTC+2).
 
 ## Recent Updates (Nov 17, 2025)
+
+- **Enhanced Notification System**: Improved proactive deadline management
+  - Check frequency increased from 30 minutes to 5 minutes for faster response
+  - Added 1-hour reminder notification (final warning before deadline)
+  - Three-tier reminder system: 24h → 3h → 1h warnings
+  - Reduced error recovery pause from 5 minutes to 1 minute
+  
+- **Fixed Dashboard Statistics**: Corrected status count calculations
+  - Fixed dict_factory data transformation in statistics module
+  - Status counts now display correctly (was showing all zeros)
+  - Priority counts display correctly in dashboard
 
 - **Enhanced User Display Format**: Implemented consistent "First Last (@username)" display format across the entire bot interface
   - Task details now show full names for assignees: "Имя Фамилия (@username)" or "@username" fallback
@@ -58,16 +69,18 @@ Utilizes the **Aiogram 3 Router Pattern** with `core_router`, `statuses_router`,
 
 A **background notification scheduler** runs alongside the bot, providing proactive deadline management:
 - **Implementation**: Asynchronous task created with `asyncio.create_task()`, properly cancelled during shutdown
-- **Check Frequency**: Every 30 minutes
+- **Check Frequency**: Every 5 minutes (300 seconds)
 - **Notification Types**:
   - **24-hour reminder**: Sent to task assignee 24 hours before deadline
-  - **3-hour reminder**: Sent to task assignee 3 hours before deadline  
+  - **3-hour reminder**: Sent to task assignee 3 hours before deadline
+  - **1-hour reminder**: Sent to task assignee 1 hour before deadline (final warning)
   - **Overdue alert**: Sent to all admins for tasks past deadline
-- **Smart Tracking**: Uses `task_notifications` table to prevent duplicate notifications
+- **Smart Tracking**: Uses `task_notifications` table to prevent duplicate notifications (types: '24h', '3h', '1h', 'overdue')
 - **NULL-safe**: Handles tasks with missing descriptions gracefully
 - **Priority-aware**: Includes priority emoji indicators in notifications
 - **Quick Actions**: All notifications include "Open Task" button for direct access
 - **Logging**: Comprehensive logging with emoji indicators for monitoring
+- **Error Handling**: On error, scheduler pauses for 1 minute before retrying
 
 ## Logging System
 

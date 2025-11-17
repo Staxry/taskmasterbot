@@ -146,6 +146,44 @@ def get_tasks_for_3h_reminder() -> List[Dict[str, Any]]:
         conn.close()
 
 
+def get_tasks_for_1h_reminder() -> List[Dict[str, Any]]:
+    """
+    Получить задачи, до срока которых осталось ~1 час
+    
+    Returns:
+        List задач для уведомления
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        cur.execute("""
+            SELECT 
+                t.id,
+                t.title,
+                t.description,
+                t.priority,
+                t.due_date,
+                t.assigned_to_id,
+                u.telegram_id,
+                u.username,
+                u.first_name,
+                u.last_name
+            FROM tasks t
+            JOIN users u ON t.assigned_to_id = u.id
+            WHERE t.status NOT IN ('completed', 'rejected')
+            AND t.due_date BETWEEN datetime('now', '+50 minutes') AND datetime('now', '+1 hour 10 minutes')
+        """)
+        
+        tasks = cur.fetchall()
+        logger.info(f"📋 Found {len(tasks)} tasks for 1h reminder")
+        return tasks
+        
+    finally:
+        cur.close()
+        conn.close()
+
+
 def get_overdue_tasks() -> List[Dict[str, Any]]:
     """
     Получить просроченные задачи (срок прошёл менее суток назад)
@@ -301,6 +339,51 @@ async def send_3h_reminder(bot: Bot, task: Dict[str, Any]):
         logger.error(f"❌ Error sending 3h reminder for task {task['id']}: {e}")
 
 
+async def send_1h_reminder(bot: Bot, task: Dict[str, Any]):
+    """
+    Отправить уведомление за 1 час до срока
+    
+    Args:
+        bot: Экземпляр Telegram бота
+        task: Данные задачи
+    """
+    if check_notification_sent(task['id'], '1h'):
+        logger.debug(f"⏭️ 1h reminder already sent for task {task['id']}")
+        return
+    
+    priority_emoji = {
+        'urgent': '🔴',
+        'high': '🟠',
+        'medium': '🟡',
+        'low': '🟢'
+    }
+    
+    emoji = priority_emoji.get(task['priority'], '📌')
+    
+    description_text = task['description'][:100] if task.get('description') else "Нет описания"
+    message = (
+        f"⚡ <b>ПОСЛЕДНЕЕ ПРЕДУПРЕЖДЕНИЕ!</b>\n\n"
+        f"{emoji} <b>{task['title']}</b>\n"
+        f"📝 {description_text}...\n\n"
+        f"⏳ <b>Срок: {task['due_date'].strftime('%d.%m.%Y %H:%M')}</b>\n"
+        f"🔥 Остался всего <b>~1 час</b>!\n\n"
+        f"⚡ <b>СРОЧНО завершите задачу!</b>"
+    )
+    
+    try:
+        await bot.send_message(
+            chat_id=task['telegram_id'],
+            text=message,
+            parse_mode='HTML'
+        )
+        
+        mark_notification_sent(task['id'], '1h')
+        logger.info(f"✅ 1h reminder sent to {task['username']} for task #{task['id']}")
+        
+    except Exception as e:
+        logger.error(f"❌ Error sending 1h reminder for task {task['id']}: {e}")
+
+
 async def send_overdue_notification(bot: Bot, task: Dict[str, Any]):
     """
     Отправить уведомление админам о просроченной задаче
@@ -383,13 +466,19 @@ async def check_and_send_notifications(bot: Bot):
             await send_3h_reminder(bot, task)
             await asyncio.sleep(0.5)
         
+        # Уведомления за 1 час
+        tasks_1h = get_tasks_for_1h_reminder()
+        for task in tasks_1h:
+            await send_1h_reminder(bot, task)
+            await asyncio.sleep(0.5)
+        
         # Уведомления о просроченных задачах
         overdue_tasks = get_overdue_tasks()
         for task in overdue_tasks:
             await send_overdue_notification(bot, task)
             await asyncio.sleep(0.5)
         
-        logger.info(f"✅ Notification check completed: 24h={len(tasks_24h)}, 3h={len(tasks_3h)}, overdue={len(overdue_tasks)}")
+        logger.info(f"✅ Notification check completed: 24h={len(tasks_24h)}, 3h={len(tasks_3h)}, 1h={len(tasks_1h)}, overdue={len(overdue_tasks)}")
         
     except Exception as e:
         logger.error(f"❌ Error in notification check cycle: {e}", exc_info=True)
@@ -398,18 +487,18 @@ async def check_and_send_notifications(bot: Bot):
 async def notification_scheduler(bot: Bot):
     """
     Фоновая задача для периодической проверки уведомлений
-    Проверка каждые 30 минут
+    Проверка каждые 5 минут
     
     Args:
         bot: Экземпляр Telegram бота
     """
-    logger.info("🔔 Notification scheduler started (check every 30 minutes)")
+    logger.info("🔔 Notification scheduler started (check every 5 minutes)")
     
     while True:
         try:
             await check_and_send_notifications(bot)
-            await asyncio.sleep(1800)  # 30 минут = 1800 секунд
+            await asyncio.sleep(300)  # 5 минут = 300 секунд
             
         except Exception as e:
             logger.error(f"❌ Error in notification scheduler: {e}", exc_info=True)
-            await asyncio.sleep(300)  # При ошибке пауза 5 минут
+            await asyncio.sleep(60)  # При ошибке пауза 1 минута
