@@ -77,7 +77,7 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
     
     try:
         cur.execute(
-            "UPDATE tasks SET status = %s, completion_comment = %s, updated_at = NOW() WHERE id = %s",
+            "UPDATE tasks SET status = ?, completion_comment = ?, updated_at = datetime('now') WHERE id = ?",
             (new_status, comment, task_id)
         )
         conn.commit()
@@ -89,7 +89,7 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
                       t.created_by_id, c.username as creator_username, c.telegram_id as creator_telegram_id
                FROM tasks t
                LEFT JOIN users c ON t.created_by_id = c.id
-               WHERE t.id = %s""",
+               WHERE t.id = ?""",
             (task_id,)
         )
         task_info = cur.fetchone()
@@ -205,7 +205,7 @@ async def process_completion_photo(message: Message, state: FSMContext):
     
     try:
         cur.execute(
-            "UPDATE tasks SET status = %s, completion_comment = %s, photo_file_id = %s, updated_at = NOW() WHERE id = %s",
+            "UPDATE tasks SET status = ?, completion_comment = ?, photo_file_id = ?, updated_at = datetime('now') WHERE id = ?",
             (new_status, comment, photo_file_id, task_id)
         )
         conn.commit()
@@ -217,7 +217,7 @@ async def process_completion_photo(message: Message, state: FSMContext):
                       t.created_by_id, c.username as creator_username, c.telegram_id as creator_telegram_id
                FROM tasks t
                LEFT JOIN users c ON t.created_by_id = c.id
-               WHERE t.id = %s""",
+               WHERE t.id = ?""",
             (task_id,)
         )
         task_info = cur.fetchone()
@@ -408,7 +408,7 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
     try:
         if assignee_id:
             cur.execute(
-                "SELECT username, telegram_id FROM users WHERE id = %s",
+                "SELECT username, telegram_id FROM users WHERE id = ?",
                 (assignee_id,)
             )
             assignee = cur.fetchone()
@@ -433,7 +433,7 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
         cur.execute(
             """INSERT INTO tasks 
                (title, description, priority, status, due_date, assigned_to_id, created_by_id, task_photo_file_id, created_at, updated_at)
-               VALUES (%s, %s, %s, 'pending', %s, %s, %s, %s, NOW(), NOW())
+               VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, datetime('now'), datetime('now'))
                RETURNING id, title, priority, status, task_photo_file_id""",
             (
                 title,

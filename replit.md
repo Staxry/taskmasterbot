@@ -1,6 +1,6 @@
 # Overview
 
-This project is a full-featured asynchronous Telegram bot designed for task management. Built with Python and the `aiogram` library, it operates via commands using polling, ensuring free operation without AI costs. The system offers a robust, production-ready implementation with a modular architecture, role-based access for task management (admin/employee), and utilizes PostgreSQL for data storage. Its core capabilities include interactive inline buttons for all commands, a whitelist authorization system, FSM for task and user management, error handling, task photos, automated deadline notifications (24h/3h reminders and overdue alerts), advanced statistics with Excel export, pagination, search, and **full timezone support with precise time selection**. The project aims to provide an efficient and cost-effective solution for team task coordination with proactive deadline management and accurate time tracking in the Kaliningrad timezone (UTC+2).
+This project is a full-featured asynchronous Telegram bot designed for task management. Built with Python and the `aiogram` library, it operates via commands using polling, ensuring free operation without AI costs. The system offers a robust, production-ready implementation with a modular architecture, role-based access for task management (admin/employee), and utilizes **SQLite** for local data storage. Its core capabilities include interactive inline buttons for all commands, a whitelist authorization system, FSM for task and user management, error handling, task photos, automated deadline notifications (24h/3h reminders and overdue alerts), advanced statistics with Excel export, pagination, search, and **full timezone support with precise time selection**. The project aims to provide an efficient and cost-effective solution for team task coordination with proactive deadline management and accurate time tracking in the Kaliningrad timezone (UTC+2).
 
 # User Preferences
 
@@ -29,7 +29,7 @@ The codebase is organized for clarity and maintainability:
 
 ## Database Layer
 
-**PostgreSQL with psycopg2** manages data, featuring:
+**SQLite3** manages data (файловая база данных), featuring:
 - A schema with `users`, `tasks`, `allowed_users`, and `task_notifications` tables.
 - Enum types for roles, priorities, and statuses.
 - Foreign key relationships between users and tasks.
@@ -111,8 +111,7 @@ The system uses **Polling** for its simplicity, no HTTPS requirement, and ease o
 # External Dependencies
 
 ## Database & Storage
-- **PostgreSQL**: Primary database.
-- **psycopg2-binary**: Python adapter for PostgreSQL.
+- **SQLite3**: Файловая база данных (встроена в Python, установка не требуется).
 
 ## Telegram Integration
 - **aiogram**: Asynchronous framework for Telegram Bot API.

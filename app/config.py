@@ -39,8 +39,9 @@ def combine_datetime(date_str: str, time_str: str):
     # Добавляем часовой пояс
     return TIMEZONE.localize(naive_dt)
 
-# Database Configuration
-DATABASE_URL = os.getenv('DATABASE_URL')
+# Database Configuration (SQLite)
+# По умолчанию БД создаётся в файле data/task_bot.db
+DATABASE_PATH = os.getenv('DATABASE_PATH', 'data/task_bot.db')
 
 # Logging Configuration
 LOG_FILE = 'logs/bot.log'

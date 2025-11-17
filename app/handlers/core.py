@@ -201,7 +201,7 @@ async def process_add_user(message: Message, state: FSMContext):
         
         cur.execute(
             """INSERT INTO allowed_users (username, role, added_by_id, created_at)
-               VALUES (%s, %s, %s, NOW())
+               VALUES (?, ?, ?, datetime('now'))
                ON CONFLICT (username) 
                DO UPDATE SET role = EXCLUDED.role, added_by_id = EXCLUDED.added_by_id""",
             (new_username, target_role, user['id'])
@@ -270,7 +270,7 @@ async def show_my_tasks_page(callback: CallbackQuery, page: int = 1):
             cur.execute("SELECT COUNT(*) FROM tasks")
         else:
             cur.execute(
-                "SELECT COUNT(*) FROM tasks WHERE assigned_to_id = %s OR assigned_to_id IS NULL",
+                "SELECT COUNT(*) FROM tasks WHERE assigned_to_id = ? OR assigned_to_id IS NULL",
                 (user['id'],)
             )
         total_count = cur.fetchone()[0]
@@ -287,7 +287,7 @@ async def show_my_tasks_page(callback: CallbackQuery, page: int = 1):
                 """SELECT id, title, status, priority, due_date, assigned_to_id
                    FROM tasks 
                    ORDER BY created_at DESC
-                   LIMIT %s OFFSET %s""",
+                   LIMIT ? OFFSET ?""",
                 (page_size, offset)
             )
         else:
@@ -295,9 +295,9 @@ async def show_my_tasks_page(callback: CallbackQuery, page: int = 1):
             cur.execute(
                 """SELECT id, title, status, priority, due_date, assigned_to_id
                    FROM tasks 
-                   WHERE assigned_to_id = %s OR assigned_to_id IS NULL
+                   WHERE assigned_to_id = ? OR assigned_to_id IS NULL
                    ORDER BY created_at DESC
-                   LIMIT %s OFFSET %s""",
+                   LIMIT ? OFFSET ?""",
                 (user['id'], page_size, offset)
             )
         tasks = cur.fetchall()
@@ -441,7 +441,7 @@ async def show_all_tasks_page(callback: CallbackQuery, page: int = 1):
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
                ORDER BY t.created_at DESC
-               LIMIT %s OFFSET %s""",
+               LIMIT ? OFFSET ?""",
             (page_size, offset)
         )
         tasks = cur.fetchall()
@@ -540,7 +540,7 @@ async def callback_task_details(callback: CallbackQuery):
                       u.username, t.created_at, t.assigned_to_id, t.completion_comment, t.photo_file_id
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
-               WHERE t.id = %s""",
+               WHERE t.id = ?""",
             (task_id,)
         )
         task = cur.fetchone()
@@ -647,7 +647,7 @@ async def callback_take_task(callback: CallbackQuery):
     try:
         cur.execute(
             """SELECT id, title, description, priority, due_date, assigned_to_id, created_by_id, task_photo_file_id 
-               FROM tasks WHERE id = %s""",
+               FROM tasks WHERE id = ?""",
             (task_id,)
         )
         task = cur.fetchone()
@@ -667,7 +667,7 @@ async def callback_take_task(callback: CallbackQuery):
             return
         
         cur.execute(
-            "UPDATE tasks SET assigned_to_id = %s, status = 'in_progress', updated_at = NOW() WHERE id = %s",
+            "UPDATE tasks SET assigned_to_id = ?, status = 'in_progress', updated_at = datetime('now') WHERE id = ?",
             (user['id'], task_id)
         )
         conn.commit()
@@ -678,7 +678,7 @@ async def callback_take_task(callback: CallbackQuery):
         
         if created_by_id:
             cur.execute(
-                "SELECT telegram_id, username FROM users WHERE id = %s",
+                "SELECT telegram_id, username FROM users WHERE id = ?",
                 (created_by_id,)
             )
             creator = cur.fetchone()
@@ -1152,7 +1152,7 @@ async def callback_delete_confirm(callback: CallbackQuery):
     
     try:
         cur.execute(
-            "SELECT title FROM tasks WHERE id = %s",
+            "SELECT title FROM tasks WHERE id = ?",
             (task_id,)
         )
         task = cur.fetchone()
@@ -1165,7 +1165,7 @@ async def callback_delete_confirm(callback: CallbackQuery):
         task_title = task[0]
         
         cur.execute(
-            "DELETE FROM tasks WHERE id = %s",
+            "DELETE FROM tasks WHERE id = ?",
             (task_id,)
         )
         conn.commit()
@@ -1214,7 +1214,7 @@ async def callback_remove_admin(callback: CallbackQuery):
     
     try:
         cur.execute(
-            "SELECT id, username FROM users WHERE role = 'admin' AND telegram_id != %s ORDER BY username",
+            "SELECT id, username FROM users WHERE role = 'admin' AND telegram_id != ? ORDER BY username",
             (telegram_id,)
         )
         admins = cur.fetchall()
@@ -1347,7 +1347,7 @@ async def callback_confirm_remove_user(callback: CallbackQuery):
     
     try:
         cur.execute(
-            "SELECT username, role FROM users WHERE id = %s",
+            "SELECT username, role FROM users WHERE id = ?",
             (user_id_to_remove,)
         )
         user_to_remove = cur.fetchone()
@@ -1361,9 +1361,9 @@ async def callback_confirm_remove_user(callback: CallbackQuery):
         
         logger.debug(f"🗑️ Removing user: {username_to_remove} ({role_to_remove})")
         
-        cur.execute("DELETE FROM users WHERE id = %s", (user_id_to_remove,))
-        cur.execute("DELETE FROM allowed_users WHERE username = %s", (username_to_remove,))
-        cur.execute("UPDATE tasks SET assigned_to_id = NULL WHERE assigned_to_id = %s", (user_id_to_remove,))
+        cur.execute("DELETE FROM users WHERE id = ?", (user_id_to_remove,))
+        cur.execute("DELETE FROM allowed_users WHERE username = ?", (username_to_remove,))
+        cur.execute("UPDATE tasks SET assigned_to_id = NULL WHERE assigned_to_id = ?", (user_id_to_remove,))
         
         conn.commit()
         
@@ -1616,14 +1616,14 @@ async def show_search_results_page(message: Message, user: dict, query: str, pag
         if user['role'] == 'admin':
             cur.execute(
                 """SELECT COUNT(*) FROM tasks 
-                   WHERE title ILIKE %s OR description ILIKE %s""",
+                   WHERE title LIKE ? OR description LIKE ?""",
                 (search_pattern, search_pattern)
             )
         else:
             cur.execute(
                 """SELECT COUNT(*) FROM tasks 
-                   WHERE (title ILIKE %s OR description ILIKE %s)
-                   AND (assigned_to_id = %s OR assigned_to_id IS NULL)""",
+                   WHERE (title LIKE ? OR description LIKE ?)
+                   AND (assigned_to_id = ? OR assigned_to_id IS NULL)""",
                 (search_pattern, search_pattern, user['id'])
             )
         total_count = cur.fetchone()[0]
@@ -1645,19 +1645,19 @@ async def show_search_results_page(message: Message, user: dict, query: str, pag
             cur.execute(
                 """SELECT id, title, status, priority, due_date, assigned_to_id
                    FROM tasks 
-                   WHERE title ILIKE %s OR description ILIKE %s
+                   WHERE title LIKE ? OR description LIKE ?
                    ORDER BY created_at DESC
-                   LIMIT %s OFFSET %s""",
+                   LIMIT ? OFFSET ?""",
                 (search_pattern, search_pattern, page_size, offset)
             )
         else:
             cur.execute(
                 """SELECT id, title, status, priority, due_date, assigned_to_id
                    FROM tasks 
-                   WHERE (title ILIKE %s OR description ILIKE %s)
-                   AND (assigned_to_id = %s OR assigned_to_id IS NULL)
+                   WHERE (title LIKE ? OR description LIKE ?)
+                   AND (assigned_to_id = ? OR assigned_to_id IS NULL)
                    ORDER BY created_at DESC
-                   LIMIT %s OFFSET %s""",
+                   LIMIT ? OFFSET ?""",
                 (search_pattern, search_pattern, user['id'], page_size, offset)
             )
         tasks = cur.fetchall()

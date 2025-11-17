@@ -42,7 +42,7 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
     
     try:
         cur.execute(
-            "SELECT assigned_to_id FROM tasks WHERE id = %s",
+            "SELECT assigned_to_id FROM tasks WHERE id = ?",
             (task_id,)
         )
         task = cur.fetchone()
@@ -102,7 +102,7 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
         logger.debug(f"💾 Updating task #{task_id} status to {new_status}")
         
         cur.execute(
-            "UPDATE tasks SET status = %s, updated_at = NOW() WHERE id = %s",
+            "UPDATE tasks SET status = ?, updated_at = datetime('now') WHERE id = ?",
             (new_status, task_id)
         )
         conn.commit()
@@ -122,7 +122,7 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
                       u.username, t.created_at, t.assigned_to_id, t.completion_comment, t.photo_file_id
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
-               WHERE t.id = %s""",
+               WHERE t.id = ?""",
             (task_id,)
         )
         updated_task = cur.fetchone()
@@ -210,7 +210,7 @@ async def callback_reopen_task(callback: CallbackQuery):
     
     try:
         cur.execute(
-            "SELECT status FROM tasks WHERE id = %s",
+            "SELECT status FROM tasks WHERE id = ?",
             (task_id,)
         )
         task = cur.fetchone()
@@ -234,8 +234,8 @@ async def callback_reopen_task(callback: CallbackQuery):
                SET status = 'in_progress', 
                    completion_comment = NULL, 
                    photo_file_id = NULL, 
-                   updated_at = NOW() 
-               WHERE id = %s""",
+                   updated_at = datetime('now') 
+               WHERE id = ?""",
             (task_id,)
         )
         conn.commit()
@@ -249,7 +249,7 @@ async def callback_reopen_task(callback: CallbackQuery):
                       u.username, t.created_at, t.assigned_to_id
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
-               WHERE t.id = %s""",
+               WHERE t.id = ?""",
             (task_id,)
         )
         updated_task = cur.fetchone()

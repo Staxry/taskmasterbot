@@ -29,11 +29,12 @@ def check_notification_sent(task_id: int, notification_type: str) -> bool:
     
     try:
         cur.execute("""
-            SELECT COUNT(*) FROM task_notifications
-            WHERE task_id = %s AND notification_type = %s
+            SELECT COUNT(*) as count FROM task_notifications
+            WHERE task_id = ? AND notification_type = ?
         """, (task_id, notification_type))
         
-        count = cur.fetchone()[0]
+        result = cur.fetchone()
+        count = result['count'] if result else 0
         return count > 0
         
     finally:
@@ -54,9 +55,8 @@ def mark_notification_sent(task_id: int, notification_type: str):
     
     try:
         cur.execute("""
-            INSERT INTO task_notifications (task_id, notification_type, sent_at)
-            VALUES (%s, %s, NOW())
-            ON CONFLICT (task_id, notification_type) DO NOTHING
+            INSERT OR IGNORE INTO task_notifications (task_id, notification_type, sent_at)
+            VALUES (?, ?, datetime('now'))
         """, (task_id, notification_type))
         
         conn.commit()
@@ -94,22 +94,10 @@ def get_tasks_for_24h_reminder() -> List[Dict[str, Any]]:
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
             WHERE t.status NOT IN ('completed', 'rejected')
-            AND t.due_date BETWEEN NOW() + INTERVAL '23 hours' AND NOW() + INTERVAL '25 hours'
+            AND t.due_date BETWEEN datetime('now', '+23 hours') AND datetime('now', '+25 hours')
         """)
         
-        tasks = []
-        for row in cur.fetchall():
-            tasks.append({
-                'id': row[0],
-                'title': row[1],
-                'description': row[2],
-                'priority': row[3],
-                'due_date': row[4],
-                'assigned_to_id': row[5],
-                'telegram_id': row[6],
-                'username': row[7]
-            })
-        
+        tasks = cur.fetchall()
         logger.info(f"📋 Found {len(tasks)} tasks for 24h reminder")
         return tasks
         
@@ -142,22 +130,10 @@ def get_tasks_for_3h_reminder() -> List[Dict[str, Any]]:
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
             WHERE t.status NOT IN ('completed', 'rejected')
-            AND t.due_date BETWEEN NOW() + INTERVAL '2 hours 30 minutes' AND NOW() + INTERVAL '3 hours 30 minutes'
+            AND t.due_date BETWEEN datetime('now', '+2 hours 30 minutes') AND datetime('now', '+3 hours 30 minutes')
         """)
         
-        tasks = []
-        for row in cur.fetchall():
-            tasks.append({
-                'id': row[0],
-                'title': row[1],
-                'description': row[2],
-                'priority': row[3],
-                'due_date': row[4],
-                'assigned_to_id': row[5],
-                'telegram_id': row[6],
-                'username': row[7]
-            })
-        
+        tasks = cur.fetchall()
         logger.info(f"📋 Found {len(tasks)} tasks for 3h reminder")
         return tasks
         
@@ -190,22 +166,11 @@ def get_overdue_tasks() -> List[Dict[str, Any]]:
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
             WHERE t.status NOT IN ('completed', 'rejected')
-            AND t.due_date < NOW()
-            AND t.due_date >= NOW() - INTERVAL '1 day'
+            AND t.due_date < datetime('now')
+            AND t.due_date >= datetime('now', '-1 day')
         """)
         
-        tasks = []
-        for row in cur.fetchall():
-            tasks.append({
-                'id': row[0],
-                'title': row[1],
-                'description': row[2],
-                'priority': row[3],
-                'due_date': row[4],
-                'assigned_to_id': row[5],
-                'telegram_id': row[6],
-                'username': row[7]
-            })
+        tasks = cur.fetchall()
         
         logger.info(f"📋 Found {len(tasks)} overdue tasks")
         return tasks
@@ -231,7 +196,7 @@ def get_all_admins() -> List[str]:
             WHERE role = 'admin'
         """)
         
-        admins = [row[0] for row in cur.fetchall()]
+        admins = [row['telegram_id'] for row in cur.fetchall()]
         logger.debug(f"👥 Found {len(admins)} admins")
         return admins
         

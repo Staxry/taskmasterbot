@@ -44,14 +44,14 @@ def check_user_authorization(username: str) -> Optional[Dict[str, str]]:
         logger.debug(f"📊 [check_user_authorization] Querying allowed_users table for: {username}")
         
         cur.execute(
-            "SELECT username, role FROM allowed_users WHERE username = %s",
+            "SELECT username, role FROM allowed_users WHERE username = ?",
             (username,)
         )
         result = cur.fetchone()
         
         if result:
-            user_data = {'username': result[0], 'role': result[1]}
-            logger.info(f"✅ [check_user_authorization] User {username} is authorized with role: {result[1]}")
+            user_data = {'username': result['username'], 'role': result['role']}
+            logger.info(f"✅ [check_user_authorization] User {username} is authorized with role: {result['role']}")
             return user_data
         else:
             logger.warning(f"❌ [check_user_authorization] User {username} not found in whitelist")
@@ -119,31 +119,31 @@ def get_or_create_user(telegram_id: str, username: str, first_name: str) -> Opti
         logger.debug(f"📊 [get_or_create_user] Searching for existing user with telegram_id: {telegram_id}")
         
         cur.execute(
-            "SELECT id, telegram_id, username, role FROM users WHERE telegram_id = %s",
+            "SELECT id, telegram_id, username, role FROM users WHERE telegram_id = ?",
             (telegram_id,)
         )
         user = cur.fetchone()
         
         if user:
-            logger.info(f"👤 [get_or_create_user] Found existing user: id={user[0]}, username={user[2]}, role={user[3]}")
+            logger.info(f"👤 [get_or_create_user] Found existing user: id={user['id']}, username={user['username']}, role={user['role']}")
             
-            if user[3] != allowed['role']:
-                logger.info(f"🔄 [get_or_create_user] Role mismatch detected. Updating role from {user[3]} to {allowed['role']}")
+            if user['role'] != allowed['role']:
+                logger.info(f"🔄 [get_or_create_user] Role mismatch detected. Updating role from {user['role']} to {allowed['role']}")
                 
                 cur.execute(
-                    "UPDATE users SET role = %s WHERE telegram_id = %s",
+                    "UPDATE users SET role = ? WHERE telegram_id = ?",
                     (allowed['role'], telegram_id)
                 )
                 conn.commit()
                 
                 logger.info(f"✅ [get_or_create_user] Successfully updated role for {username}: {allowed['role']}")
             else:
-                logger.debug(f"ℹ️ [get_or_create_user] Role unchanged for {username}: {user[3]}")
+                logger.debug(f"ℹ️ [get_or_create_user] Role unchanged for {username}: {user['role']}")
             
             user_data = {
-                'id': user[0],
-                'telegram_id': user[1],
-                'username': user[2],
+                'id': user['id'],
+                'telegram_id': user['telegram_id'],
+                'username': user['username'],
                 'role': allowed['role']
             }
             
@@ -155,21 +155,27 @@ def get_or_create_user(telegram_id: str, username: str, first_name: str) -> Opti
             
             cur.execute(
                 """INSERT INTO users (telegram_id, username, role, created_at, updated_at) 
-                   VALUES (%s, %s, %s, NOW(), NOW()) 
-                   RETURNING id, telegram_id, username, role""",
+                   VALUES (?, ?, ?, datetime('now'), datetime('now'))""",
                 (telegram_id, username, allowed['role'])
             )
             conn.commit()
+            new_user_id = cur.lastrowid
+            
+            # Получаем созданного пользователя
+            cur.execute(
+                "SELECT id, telegram_id, username, role FROM users WHERE id = ?",
+                (new_user_id,)
+            )
             new_user = cur.fetchone()
             
             user_data = {
-                'id': new_user[0],
-                'telegram_id': new_user[1],
-                'username': new_user[2],
-                'role': new_user[3]
+                'id': new_user['id'],
+                'telegram_id': new_user['telegram_id'],
+                'username': new_user['username'],
+                'role': new_user['role']
             }
             
-            logger.info(f"✅ [get_or_create_user] Successfully created new user: {username} as {allowed['role']}, id={new_user[0]}")
+            logger.info(f"✅ [get_or_create_user] Successfully created new user: {username} as {allowed['role']}, id={new_user['id']}")
             logger.debug(f"📊 [get_or_create_user] New user data: {user_data}")
             
             return user_data
