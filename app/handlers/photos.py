@@ -118,7 +118,7 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
 <b>Исполнитель:</b> @{username}
 <b>Комментарий:</b> {comment}
 
-Используйте /start для просмотра задачи."""
+Нажмите кнопку ниже для просмотра задачи."""
                     else:
                         notification_text = f"""🔶 <b>Задача частично завершена!</b>
 
@@ -130,14 +130,19 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
 <b>Исполнитель:</b> @{username}
 <b>Отчёт о прогрессе:</b> {comment}
 
-Задача ещё в работе. Используйте /start для просмотра."""
+Задача ещё в работе. Нажмите кнопку ниже для просмотра."""
+                    
+                    task_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="📂 Открыть задачу", callback_data=f"task_{task_id}")]
+                    ])
                     
                     logger.info(f"📨 Sending completion notification to {creator_username}")
                     
                     await callback.message.bot.send_message(
                         chat_id=creator_telegram_id,
                         text=notification_text,
-                        parse_mode='HTML'
+                        parse_mode='HTML',
+                        reply_markup=task_keyboard
                     )
                     logger.info(f"✅ Completion notification sent to {creator_username} (task #{task_id})")
                 except Exception as notif_error:
@@ -237,7 +242,7 @@ async def process_completion_photo(message: Message, state: FSMContext):
 <b>Исполнитель:</b> @{username}
 <b>Комментарий:</b> {comment}
 
-Используйте /start для просмотра задачи."""
+Нажмите кнопку ниже для просмотра задачи."""
                     else:
                         caption = f"""🔶 <b>Задача частично завершена!</b>
 
@@ -249,7 +254,11 @@ async def process_completion_photo(message: Message, state: FSMContext):
 <b>Исполнитель:</b> @{username}
 <b>Отчёт о прогрессе:</b> {comment}
 
-Задача ещё в работе. Используйте /start для просмотра."""
+Задача ещё в работе. Нажмите кнопку ниже для просмотра."""
+                    
+                    task_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="📂 Открыть задачу", callback_data=f"task_{task_id}")]
+                    ])
                     
                     logger.info(f"📨 Sending completion notification WITH photo to {creator_username}")
                     
@@ -257,7 +266,8 @@ async def process_completion_photo(message: Message, state: FSMContext):
                         chat_id=creator_telegram_id,
                         photo=photo_file_id,
                         caption=caption,
-                        parse_mode='HTML'
+                        parse_mode='HTML',
+                        reply_markup=task_keyboard
                     )
                     logger.info(f"✅ Completion notification with photo sent to {creator_username} (task #{task_id})")
                 except Exception as notif_error:
