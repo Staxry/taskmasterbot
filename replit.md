@@ -1,6 +1,6 @@
 # Overview
 
-This project is a full-featured asynchronous Telegram bot designed for task management. Built with Python and the `aiogram` library, it operates via commands using polling, ensuring free operation without AI costs. The system offers a robust, production-ready implementation with a modular architecture, role-based access for task management (admin/employee), and utilizes PostgreSQL for data storage. Its core capabilities include interactive inline buttons for all commands, a whitelist authorization system, FSM for task and user management, error handling, task photos, automated deadline notifications (24h/3h reminders and overdue alerts), advanced statistics with Excel export, pagination, and search. The project aims to provide an efficient and cost-effective solution for team task coordination with proactive deadline management.
+This project is a full-featured asynchronous Telegram bot designed for task management. Built with Python and the `aiogram` library, it operates via commands using polling, ensuring free operation without AI costs. The system offers a robust, production-ready implementation with a modular architecture, role-based access for task management (admin/employee), and utilizes PostgreSQL for data storage. Its core capabilities include interactive inline buttons for all commands, a whitelist authorization system, FSM for task and user management, error handling, task photos, automated deadline notifications (24h/3h reminders and overdue alerts), advanced statistics with Excel export, pagination, search, and **full timezone support with precise time selection**. The project aims to provide an efficient and cost-effective solution for team task coordination with proactive deadline management and accurate time tracking in the Moscow timezone (UTC+3).
 
 # User Preferences
 
@@ -10,7 +10,7 @@ Preferred communication style: Simple, everyday language (Russian).
 
 ## Core Framework
 
-The application is developed with **Python 3.11 and aiogram 3.22**, leveraging `asyncio` for asynchronous command processing and operating in polling mode for continuous Telegram API interaction. It uses `MemoryStorage` for the Finite State Machine (FSM) and adheres to `aiogram 3.x` best practices with a modular, router-based architecture.
+The application is developed with **Python 3.11 and aiogram 3.22**, leveraging `asyncio` for asynchronous command processing and operating in polling mode for continuous Telegram API interaction. It uses `MemoryStorage` for the Finite State Machine (FSM) and adheres to `aiogram 3.x` best practices with a modular, router-based architecture. The system includes **pytz** for comprehensive timezone support, ensuring all timestamps are stored and displayed correctly in the Moscow timezone (Europe/Moscow UTC+3).
 
 ## Modular Structure (v2.0)
 
@@ -100,6 +100,13 @@ The system uses **Polling** for its simplicity, no HTTPS requirement, and ease o
   - **Completed Tasks**: Detailed list with timestamps and assignees
   - **Overdue Tasks**: Detailed list with days overdue (7+ days highlighted in red)
 - **Automated Reminders**: Proactive 24h/3h deadline notifications and overdue alerts to keep tasks on track.
+- **Timezone Support & Time Selection** (NEW):
+  - **Configurable Timezone**: Default is Europe/Moscow (UTC+3), easily changed in `app/config.py`
+  - **Two-Step Date/Time Selection**: Users first select a date, then choose a specific time
+  - **Time Selection Options**: 09:00-23:59 with quick-select buttons (09:00, 12:00, 15:00, 18:00, 21:00, etc.) and manual input
+  - **Timezone-Aware Storage**: All timestamps stored as `TIMESTAMP WITH TIME ZONE` in PostgreSQL
+  - **Consistent Formatting**: All dates/times displayed as "DD.MM.YYYY HH:MM (МСК)" throughout the interface
+  - **Utility Functions**: `get_now()` returns current time in configured timezone, `combine_datetime()` creates timezone-aware datetime from date and time strings
 
 # External Dependencies
 
@@ -115,6 +122,7 @@ The system uses **Polling** for its simplicity, no HTTPS requirement, and ease o
 ## Utilities
 - **python-dotenv**: For loading environment variables.
 - **typing-extensions**: For extended type hinting support.
+- **pytz**: For timezone support and datetime localization (Europe/Moscow UTC+3 by default).
 - **openpyxl**: For Excel report generation.
 - **matplotlib**: For creating charts in Excel reports.
 - **Pillow**: For image processing in reports.
