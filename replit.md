@@ -3,23 +3,30 @@
 This is a Mastra-based AI automation platform built for Replit that enables task management via Telegram webhooks. The system uses Mastra's agent framework to process natural language messages, create and manage tasks, and interact with users through a Telegram bot interface.
 
 The application demonstrates a production-ready implementation of:
-- AI agents with persistent memory using PostgreSQL
+- Command-based bot without AI (fully free)
 - Webhook-triggered workflows for real-time interaction
 - Database-backed task management system with role-based access (admin/employee)
 - Durable execution with Inngest integration
-- Natural language task management in Russian
+- Telegram slash commands in Russian
 
 ## Current Status (November 17, 2025)
 
-✅ **Complete and ready for deployment**
+✅ **Complete and ready for deployment (Command-Based, No AI)**
 
-All core components have been implemented and tested:
+All core components have been reimplemented without AI:
 - Database schema with users and tasks tables
-- Three tools (userManagement, taskManagement, telegramNotification)
-- AI agent with GPT-5 and memory
-- Two-step workflow (process message + send response)
+- Command handler for Telegram commands (no AI/LLM)
+- Two-step workflow (parse command + send response)
 - Telegram webhook trigger
 - Error handling and validation
+- **Fully free** - no AI API costs
+
+**Changes from previous version:**
+- ❌ Removed AI agent (GPT-5) and natural language understanding
+- ✅ Added command parser for explicit commands (/start, /create_task, etc.)
+- ✅ Completely free operation (no LLM API calls)
+- ✅ Faster response times
+- ✅ Predictable behavior
 
 **Next step**: Publish the application and register the Telegram webhook using the guide in `TELEGRAM_BOT_GUIDE.md`
 
@@ -49,15 +56,16 @@ Preferred communication style: Simple, everyday language (Russian).
 - Users: Telegram ID (unique), username, role (admin/employee), timestamps
 - Tasks: Title, description, priority (low/medium/high/urgent), status (pending/in_progress/completed/rejected), due date, assignment tracking
 
-## Agent Architecture
+## Command Handler Architecture
 
-**Memory-Enabled Agents** use Mastra's Memory class with PostgreSQL storage:
-- Conversation history persisted across sessions
-- Thread-scoped memory for isolated conversations
-- Working memory for maintaining user context
-- Semantic recall disabled in current implementation
+**Command Parser** (src/handlers/telegramCommandHandler.ts) processes Telegram commands:
+- Explicit command parsing (/ start, /create_task, /my_tasks, etc.)
+- Direct database operations without LLM
+- Role-based access control
+- Parameter parsing for task creation
+- No AI dependencies - fully deterministic
 
-**Agent Pattern**: Single specialized agent (telegramTaskAgent) handles task-related operations through natural language understanding.
+**Handler Pattern**: Single command handler processes all Telegram commands and returns structured responses.
 
 ## Workflow Orchestration
 
@@ -113,9 +121,8 @@ Preferred communication style: Simple, everyday language (Russian).
 # External Dependencies
 
 ## AI/LLM Services
-- **OpenAI GPT-5**: Primary language model for agent reasoning via Replit AI Integrations (no API key required)
-- **AI SDK (Vercel)**: v4.3.16 for LLM abstraction layer (using legacy methods for Playground compatibility)
-- **OpenRouter**: Alternative provider option via `@openrouter/ai-sdk-provider`
+- **None**: This version uses command-based approach without any AI/LLM
+- **Previous version used**: OpenAI GPT-5 via Replit AI Integrations (removed)
 
 ## Database & Storage
 - **PostgreSQL**: Primary database (connection via `DATABASE_URL`)

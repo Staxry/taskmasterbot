@@ -1,18 +1,16 @@
 import { createStep, createWorkflow } from "../inngest";
 import { z } from "zod";
-import { telegramTaskAgent } from "../agents/telegramTaskAgent";
+import { handleTelegramCommand } from "../../handlers/telegramCommandHandler";
 
 const processTelegramMessage = createStep({
   id: "process-telegram-message",
-  description: "Processes incoming Telegram message with AI agent and sends response back",
+  description: "Processes incoming Telegram message using command parser",
 
   inputSchema: z.object({
-    threadId: z.string().describe("Thread ID for conversation memory"),
     messageText: z.string().describe("User message text from Telegram"),
     telegramId: z.string().describe("Telegram user ID"),
     username: z.string().optional().describe("Telegram username"),
     firstName: z.string().optional().describe("First name"),
-    lastName: z.string().optional().describe("Last name"),
     chatId: z.string().describe("Telegram chat ID for sending response"),
     botToken: z.string().describe("Telegram bot token"),
   }),
@@ -26,9 +24,9 @@ const processTelegramMessage = createStep({
 
   execute: async ({ inputData, mastra }) => {
     const logger = mastra?.getLogger();
-    logger?.info('🚀 [processTelegramMessage] Processing message from Telegram user', {
+    logger?.info('🚀 [processTelegramMessage] Processing command from Telegram user', {
       telegramId: inputData.telegramId,
-      messageLength: inputData.messageText.length,
+      command: inputData.messageText,
     });
 
     if (!inputData.chatId || !inputData.botToken) {
@@ -41,52 +39,28 @@ const processTelegramMessage = createStep({
       };
     }
 
-    const prompt = `
-Пользователь написал: "${inputData.messageText}"
-
-Telegram ID пользователя: ${inputData.telegramId}
-Имя: ${inputData.firstName || 'N/A'}
-Username: ${inputData.username || 'N/A'}
-
-Обработайте запрос пользователя:
-1. Сначала получите или создайте пользователя в базе данных
-2. Проверьте его роль (админ или сотрудник)
-3. Выполните запрошенное действие в соответствии с ролью
-4. Если это новый пользователь, поприветствуйте его и объясните возможности бота
-5. Предоставьте четкий и полезный ответ на русском языке
-`;
-
     try {
-      const response = await telegramTaskAgent.generateLegacy(
-        [{ role: "user", content: prompt }],
-        {
-          resourceId: "telegram-bot",
-          threadId: inputData.threadId,
-        }
-      );
+      const result = await handleTelegramCommand({
+        telegramId: inputData.telegramId,
+        username: inputData.username,
+        firstName: inputData.firstName,
+        messageText: inputData.messageText,
+      });
 
-      if (!response || !response.text) {
-        logger?.error('❌ [processTelegramMessage] Agent returned empty response');
-        return {
-          response: 'Извините, произошла ошибка при обработке вашего запроса.',
-          success: false,
-          chatId: inputData.chatId,
-          botToken: inputData.botToken,
-        };
-      }
-
-      logger?.info('✅ [processTelegramMessage] Agent processing complete');
+      logger?.info('✅ [processTelegramMessage] Command processing complete', {
+        success: result.success,
+      });
 
       return {
-        response: response.text,
-        success: true,
+        response: result.response,
+        success: result.success,
         chatId: inputData.chatId,
         botToken: inputData.botToken,
       };
     } catch (error) {
-      logger?.error('❌ [processTelegramMessage] Agent execution failed:', error);
+      logger?.error('❌ [processTelegramMessage] Command processing failed:', error);
       return {
-        response: 'Извините, произошла ошибка при обработке вашего запроса. Попробуйте еще раз.',
+        response: 'Извините, произошла ошибка при обработке вашей команды. Попробуйте еще раз.',
         success: false,
         chatId: inputData.chatId,
         botToken: inputData.botToken,
@@ -97,7 +71,7 @@ Username: ${inputData.username || 'N/A'}
 
 const sendTelegramResponse = createStep({
   id: "send-telegram-response",
-  description: "Sends AI agent response back to Telegram user",
+  description: "Sends command response back to Telegram user",
 
   inputSchema: z.object({
     response: z.string(),
@@ -175,12 +149,10 @@ export const telegramTaskWorkflow = createWorkflow({
   id: "telegram-task-workflow",
 
   inputSchema: z.object({
-    threadId: z.string().describe("Thread ID for conversation memory"),
     messageText: z.string().describe("User message text from Telegram"),
     telegramId: z.string().describe("Telegram user ID"),
     username: z.string().optional().describe("Telegram username"),
     firstName: z.string().optional().describe("First name"),
-    lastName: z.string().optional().describe("Last name"),
     chatId: z.string().describe("Telegram chat ID for sending response"),
     botToken: z.string().describe("Telegram bot token"),
   }) as any,

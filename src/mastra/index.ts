@@ -10,7 +10,6 @@ import { z } from "zod";
 import { sharedPostgresStorage } from "./storage";
 import { inngest, inngestServe } from "./inngest";
 import { telegramTaskWorkflow } from "./workflows/telegramTaskWorkflow";
-import { telegramTaskAgent } from "./agents/telegramTaskAgent";
 import { registerTelegramTrigger } from "../triggers/telegramTriggers";
 
 class ProductionPinoLogger extends MastraLogger {
@@ -60,10 +59,8 @@ export const mastra = new Mastra({
   workflows: {
     telegramTaskWorkflow,
   },
-  // Register your agents here
-  agents: {
-    telegramTaskAgent,
-  },
+  // No agents registered - using command-based approach instead of AI
+  agents: {},
   mcpServers: {
     allTools: new MCPServer({
       name: "allTools",
@@ -221,24 +218,21 @@ export const mastra = new Mastra({
         triggerType: "telegram/message",
         handler: async (mastra, triggerInfo) => {
           const logger = mastra.getLogger();
-          logger?.info("🎯 [Telegram Trigger] Processing message", {
+          logger?.info("🎯 [Telegram Trigger] Processing command", {
             telegramId: triggerInfo.params.telegramId,
-            messageLength: triggerInfo.params.messageText.length,
+            command: triggerInfo.params.messageText,
           });
 
-          const threadId = `telegram-user-${triggerInfo.params.telegramId}`;
           const botToken = process.env.TELEGRAM_BOT_TOKEN || '';
 
           const run = await telegramTaskWorkflow.createRunAsync();
           await run.start({
             inputData: {
-              threadId,
               messageText: triggerInfo.params.messageText,
               telegramId: triggerInfo.params.telegramId,
               chatId: triggerInfo.params.chatId,
               username: triggerInfo.params.username,
               firstName: triggerInfo.params.firstName,
-              lastName: triggerInfo.params.lastName,
               botToken,
             },
           });
@@ -268,6 +262,7 @@ if (Object.keys(mastra.getWorkflows()).length > 1) {
 
 /*  Sanity check 2: Throw an error if there are more than 1 agents.  */
 // !!!!!! Do not remove this check. !!!!!!
+// Note: We're using command-based approach, so no agents registered
 if (Object.keys(mastra.getAgents()).length > 1) {
   throw new Error(
     "More than 1 agents found. Currently, more than 1 agents are not supported in the UI, since doing so will cause app state to be inconsistent.",
