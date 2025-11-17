@@ -25,8 +25,12 @@ def register_routers():
     """
     logger.info("📝 Registering routers...")
     
-    # Импортируем роутеры после создания dp, чтобы избежать circular imports
+    # ВАЖНО: Импортируем handler модули, чтобы декораторы @router выполнились
+    # Это загрузит все обработчики и зарегистрирует их в роутерах
     from app.handlers import core_router, statuses_router, photos_router
+    import app.handlers.core
+    import app.handlers.statuses
+    import app.handlers.photos
     
     # Регистрируем в правильном порядке
     dp.include_router(photos_router)
