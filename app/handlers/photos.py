@@ -56,10 +56,11 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"📝 User {username} completing task without photo")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         await state.clear()
@@ -187,12 +188,13 @@ async def process_completion_photo(message: Message, state: FSMContext):
     telegram_id = str(message.from_user.id)
     username = message.from_user.username
     first_name = message.from_user.first_name or ''
+    last_name = message.from_user.last_name or ''
     
     photo_file_id = message.photo[-1].file_id
     
     logger.info(f"📸 Completion photo received from {username}, file_id: {photo_file_id}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         logger.error(f"❌ User {username} lost authorization during completion photo upload")
         await message.answer("❌ Доступ запрещён")
@@ -384,7 +386,7 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
     
     logger.info(f"➕ Creating task by {username}, has_photo={bool(photo_file_id)}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         logger.error(f"❌ User {username} lost authorization during task creation")
         if is_message:

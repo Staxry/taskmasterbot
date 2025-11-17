@@ -1,6 +1,6 @@
 # Overview
 
-This project is a full-featured asynchronous Telegram bot designed for task management. Built with Python and the `aiogram` library, it operates via commands using polling, ensuring free operation without AI costs. The system offers a robust, production-ready implementation with a modular architecture, role-based access for task management (admin/employee), and utilizes **SQLite** for local data storage. Its core capabilities include interactive inline buttons for all commands, a whitelist authorization system, FSM for task and user management, error handling, task photos, automated deadline notifications (24h/3h reminders and overdue alerts), advanced statistics with Excel export, pagination, search, and **full timezone support with precise time selection**. The project aims to provide an efficient and cost-effective solution for team task coordination with proactive deadline management and accurate time tracking in the Kaliningrad timezone (UTC+2).
+This project is a full-featured asynchronous Telegram bot designed for task management. Built with Python and the `aiogram` library, it operates via commands using polling, ensuring free operation without AI costs. The system offers a robust, production-ready implementation with a modular architecture, role-based access for task management (admin/employee), and utilizes **SQLite** for local data storage. Its core capabilities include interactive inline buttons for all commands, a whitelist authorization system, FSM for task and user management, error handling, task photos, automated deadline notifications (24h/3h reminders and overdue alerts), advanced statistics with Excel export, pagination, search, **full timezone support with precise time selection**, and **display of user real names from Telegram profiles**. The project aims to provide an efficient and cost-effective solution for team task coordination with proactive deadline management and accurate time tracking in the Kaliningrad timezone (UTC+2).
 
 # User Preferences
 
@@ -35,7 +35,7 @@ The codebase is organized for clarity and maintainability:
 - Foreign key relationships between users and tasks.
 - Automatic schema initialization on startup.
 - Key entities:
-    - **Users**: Telegram ID, username, role, timestamps.
+    - **Users**: Telegram ID, username, first_name, last_name (from Telegram profile), role, timestamps.
     - **Tasks**: Title, description, priority, status, due date (TIMESTAMP), assignment, photo file IDs, completion comment.
     - **Allowed Users**: Whitelist for authorization by username and role.
     - **Task Notifications**: Tracking sent notifications (task_id, notification_type, sent_at) to prevent duplicates.
@@ -94,6 +94,8 @@ The system uses **Polling** for its simplicity, no HTTPS requirement, and ease o
 - **Pagination**: Implemented for task lists (10 tasks per page) with navigation and page counters.
 - **Task Search**: Allows searching tasks by title and description, accessible to all users with appropriate rights.
 - **Admin Dashboard**: Provides real-time statistics (total, active, completed, overdue tasks, status/priority distribution, top performers) with a refresh option.
+- **Real Name Display**: When selecting users (e.g., assigning tasks), the bot displays "First Last (@username)" using real names from Telegram profiles instead of just "@username", making it easier to identify team members. Names are automatically updated on every interaction.
+- **Auto-Assignment**: When a user takes an unassigned task into work, they are automatically assigned to it, and all admins receive notifications.
 - **Excel Reports**: Admins can generate detailed Excel reports with 4 sheets:
   - **Statistics**: Overview with key metrics
   - **Charts**: Visual distribution of status, priority, and performance

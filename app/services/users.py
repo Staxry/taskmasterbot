@@ -70,7 +70,7 @@ def check_user_authorization(username: str) -> Optional[Dict[str, str]]:
             logger.debug(f"🔌 [check_user_authorization] Database connection closed")
 
 
-def get_or_create_user(telegram_id: str, username: str, first_name: str) -> Optional[Dict[str, Any]]:
+def get_or_create_user(telegram_id: str, username: str, first_name: str, last_name: str = None) -> Optional[Dict[str, Any]]:
     """
     Получить существующего пользователя или создать нового (только если в whitelist)
     
@@ -78,29 +78,30 @@ def get_or_create_user(telegram_id: str, username: str, first_name: str) -> Opti
     1. Проверяет наличие username в whitelist (allowed_users)
     2. Если пользователя нет в whitelist - возвращает None
     3. Ищет пользователя по telegram_id в таблице users
-    4. Если пользователь существует - обновляет роль при необходимости
+    4. Если пользователь существует - обновляет роль и имена при необходимости
     5. Если пользователя нет - создаёт нового с ролью из whitelist
     
     Args:
         telegram_id (str): Telegram ID пользователя
         username (str): Username пользователя (без @)
         first_name (str): Имя пользователя
+        last_name (str): Фамилия пользователя (опционально)
         
     Returns:
         Optional[Dict[str, Any]]: Словарь с данными пользователя:
-                                  {'id': int, 'telegram_id': str, 'username': str, 'role': str}
+                                  {'id': int, 'telegram_id': str, 'username': str, 'role': str, 'first_name': str, 'last_name': str}
                                   или None если пользователь не авторизован
                                   
     Example:
-        >>> user = get_or_create_user('123456789', 'ivan_petrov', 'Ivan')
+        >>> user = get_or_create_user('123456789', 'ivan_petrov', 'Ivan', 'Petrov')
         >>> print(user)
-        {'id': 1, 'telegram_id': '123456789', 'username': 'ivan_petrov', 'role': 'admin'}
+        {'id': 1, 'telegram_id': '123456789', 'username': 'ivan_petrov', 'role': 'admin', 'first_name': 'Ivan', 'last_name': 'Petrov'}
     """
     if not username:
         logger.warning(f"⚠️ [get_or_create_user] Empty username provided for telegram_id: {telegram_id}")
         return None
     
-    logger.info(f"🔍 [get_or_create_user] Processing user: telegram_id={telegram_id}, username={username}, first_name={first_name}")
+    logger.info(f"🔍 [get_or_create_user] Processing user: telegram_id={telegram_id}, username={username}, first_name={first_name}, last_name={last_name}")
     
     allowed = check_user_authorization(username)
     if not allowed:
@@ -119,7 +120,7 @@ def get_or_create_user(telegram_id: str, username: str, first_name: str) -> Opti
         logger.debug(f"📊 [get_or_create_user] Searching for existing user with telegram_id: {telegram_id}")
         
         cur.execute(
-            "SELECT id, telegram_id, username, role FROM users WHERE telegram_id = ?",
+            "SELECT id, telegram_id, username, first_name, last_name, role FROM users WHERE telegram_id = ?",
             (telegram_id,)
         )
         user = cur.fetchone()
@@ -127,23 +128,42 @@ def get_or_create_user(telegram_id: str, username: str, first_name: str) -> Opti
         if user:
             logger.info(f"👤 [get_or_create_user] Found existing user: id={user['id']}, username={user['username']}, role={user['role']}")
             
+            needs_update = False
+            update_fields = []
+            update_values = []
+            
             if user['role'] != allowed['role']:
                 logger.info(f"🔄 [get_or_create_user] Role mismatch detected. Updating role from {user['role']} to {allowed['role']}")
-                
-                cur.execute(
-                    "UPDATE users SET role = ? WHERE telegram_id = ?",
-                    (allowed['role'], telegram_id)
-                )
+                update_fields.append("role = ?")
+                update_values.append(allowed['role'])
+                needs_update = True
+            
+            if user.get('first_name') != first_name:
+                logger.info(f"🔄 [get_or_create_user] Updating first_name: {user.get('first_name')} → {first_name}")
+                update_fields.append("first_name = ?")
+                update_values.append(first_name)
+                needs_update = True
+            
+            if user.get('last_name') != last_name:
+                logger.info(f"🔄 [get_or_create_user] Updating last_name: {user.get('last_name')} → {last_name}")
+                update_fields.append("last_name = ?")
+                update_values.append(last_name)
+                needs_update = True
+            
+            if needs_update:
+                update_fields.append("updated_at = datetime('now')")
+                update_values.append(telegram_id)
+                sql = f"UPDATE users SET {', '.join(update_fields)} WHERE telegram_id = ?"
+                cur.execute(sql, tuple(update_values))
                 conn.commit()
-                
-                logger.info(f"✅ [get_or_create_user] Successfully updated role for {username}: {allowed['role']}")
-            else:
-                logger.debug(f"ℹ️ [get_or_create_user] Role unchanged for {username}: {user['role']}")
+                logger.info(f"✅ [get_or_create_user] Successfully updated user {username}")
             
             user_data = {
                 'id': user['id'],
                 'telegram_id': user['telegram_id'],
                 'username': user['username'],
+                'first_name': first_name,
+                'last_name': last_name,
                 'role': allowed['role']
             }
             
@@ -154,16 +174,16 @@ def get_or_create_user(telegram_id: str, username: str, first_name: str) -> Opti
             logger.info(f"➕ [get_or_create_user] User not found, creating new user: {username}")
             
             cur.execute(
-                """INSERT INTO users (telegram_id, username, role, created_at, updated_at) 
-                   VALUES (?, ?, ?, datetime('now'), datetime('now'))""",
-                (telegram_id, username, allowed['role'])
+                """INSERT INTO users (telegram_id, username, first_name, last_name, role, created_at, updated_at) 
+                   VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+                (telegram_id, username, first_name, last_name, allowed['role'])
             )
             conn.commit()
             new_user_id = cur.lastrowid
             
             # Получаем созданного пользователя
             cur.execute(
-                "SELECT id, telegram_id, username, role FROM users WHERE id = ?",
+                "SELECT id, telegram_id, username, first_name, last_name, role FROM users WHERE id = ?",
                 (new_user_id,)
             )
             new_user = cur.fetchone()
@@ -172,6 +192,8 @@ def get_or_create_user(telegram_id: str, username: str, first_name: str) -> Opti
                 'id': new_user['id'],
                 'telegram_id': new_user['telegram_id'],
                 'username': new_user['username'],
+                'first_name': new_user['first_name'],
+                'last_name': new_user['last_name'],
                 'role': new_user['role']
             }
             

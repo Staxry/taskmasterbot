@@ -109,6 +109,7 @@ def init_database():
                 telegram_id TEXT UNIQUE NOT NULL,
                 username TEXT,
                 first_name TEXT,
+                last_name TEXT,
                 role TEXT NOT NULL DEFAULT 'employee' CHECK(role IN ('admin', 'employee')),
                 created_at timestamp DEFAULT (datetime('now')),
                 updated_at timestamp DEFAULT (datetime('now'))

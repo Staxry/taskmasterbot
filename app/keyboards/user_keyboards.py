@@ -13,7 +13,7 @@ def get_users_keyboard() -> InlineKeyboardMarkup:
     Клавиатура для выбора исполнителя из списка пользователей
     
     Returns:
-        InlineKeyboardMarkup: Клавиатура со списком пользователей
+        InlineKeyboardMarkup: Клавиатура со списком пользователей с именами из Telegram
     """
     logger.debug("🎹 Generating users keyboard")
     
@@ -22,8 +22,8 @@ def get_users_keyboard() -> InlineKeyboardMarkup:
     
     try:
         cur.execute(
-            """SELECT id, username, role FROM users 
-               ORDER BY role DESC, username ASC"""
+            """SELECT id, username, first_name, last_name, role FROM users 
+               ORDER BY role DESC, first_name ASC, username ASC"""
         )
         users = cur.fetchall()
         
@@ -32,11 +32,20 @@ def get_users_keyboard() -> InlineKeyboardMarkup:
         for user in users:
             user_id = user['id']
             username = user['username']
+            first_name = user.get('first_name')
+            last_name = user.get('last_name')
             role = user['role']
             role_emoji = "👨‍💼" if role == "admin" else "👤"
+            
+            if first_name or last_name:
+                display_name = f"{first_name or ''} {last_name or ''}".strip()
+                button_text = f"{role_emoji} {display_name} (@{username})"
+            else:
+                button_text = f"{role_emoji} @{username}"
+            
             buttons.append([
                 InlineKeyboardButton(
-                    text=f"{role_emoji} @{username}",
+                    text=button_text,
                     callback_data=f"assignee_{user_id}"
                 )
             ])

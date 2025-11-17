@@ -30,10 +30,11 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"🔄 Update status for task #{task_id} to {new_status} by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
@@ -253,10 +254,11 @@ async def callback_reopen_task(callback: CallbackQuery):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"🔄 Reopen task #{task_id} requested by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
@@ -384,10 +386,11 @@ async def process_completion_comment(message: Message, state: FSMContext):
     telegram_id = str(message.from_user.id)
     username = message.from_user.username
     first_name = message.from_user.first_name or ''
+    last_name = message.from_user.last_name or ''
     
     logger.info(f"📝 Completion comment received from {username}: {comment[:50]}...")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         logger.error(f"❌ User {username} lost authorization during completion flow")
         await message.answer("❌ Доступ запрещён")

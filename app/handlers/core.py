@@ -26,10 +26,11 @@ async def cmd_start(message: Message):
     telegram_id = str(message.from_user.id)
     username = message.from_user.username
     first_name = message.from_user.first_name or ''
+    last_name = message.from_user.last_name or ''
     
     logger.info(f"🎯 /start from {telegram_id} (@{username})")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     
     if not user:
         logger.warning(f"⛔ Access denied for {telegram_id} (@{username}) - not in whitelist")
@@ -61,10 +62,11 @@ async def callback_help(callback: CallbackQuery):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"❓ Help requested by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
@@ -103,10 +105,11 @@ async def callback_add_admin(callback: CallbackQuery, state: FSMContext):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"➕ Add admin requested by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user or user['role'] != 'admin':
         logger.warning(f"⛔ User {username} tried to add admin without permissions")
         await callback.answer("❌ Только администраторы могут добавлять пользователей", show_alert=True)
@@ -138,10 +141,11 @@ async def callback_add_employee(callback: CallbackQuery, state: FSMContext):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"➕ Add employee requested by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user or user['role'] != 'admin':
         logger.warning(f"⛔ User {username} tried to add employee without permissions")
         await callback.answer("❌ Только администраторы могут добавлять пользователей", show_alert=True)
@@ -185,8 +189,9 @@ async def process_add_user(message: Message, state: FSMContext):
     telegram_id = str(message.from_user.id)
     username = message.from_user.username
     first_name = message.from_user.first_name or ''
+    last_name = message.from_user.last_name or ''
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         logger.error(f"❌ User {username} lost authorization during add user flow")
         await message.answer("❌ Доступ запрещён")
@@ -253,10 +258,11 @@ async def show_my_tasks_page(callback: CallbackQuery, page: int = 1):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"📋 My tasks page {page} requested by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
@@ -416,10 +422,11 @@ async def show_all_tasks_page(callback: CallbackQuery, page: int = 1):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"📊 All tasks page {page} requested by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
@@ -539,10 +546,11 @@ async def callback_task_details(callback: CallbackQuery):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"📂 Task #{task_id} details requested by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
@@ -654,10 +662,11 @@ async def callback_take_task(callback: CallbackQuery):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"✋ Take task #{task_id} requested by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
@@ -793,10 +802,11 @@ async def callback_create_task(callback: CallbackQuery, state: FSMContext):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"➕ Create task requested by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
@@ -1075,10 +1085,11 @@ async def callback_delete_task_menu(callback: CallbackQuery):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"🗑️ Delete task menu requested by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
@@ -1175,10 +1186,11 @@ async def callback_delete_confirm(callback: CallbackQuery):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"🗑️ Delete task #{task_id} confirmation by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
@@ -1237,10 +1249,11 @@ async def callback_remove_admin(callback: CallbackQuery):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"🗑️ Remove admin requested by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
@@ -1304,10 +1317,11 @@ async def callback_remove_employee(callback: CallbackQuery):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"🗑️ Remove employee requested by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
@@ -1372,10 +1386,11 @@ async def callback_confirm_remove_user(callback: CallbackQuery):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"🗑️ Confirm remove user {user_id_to_remove} ({user_type}) by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
@@ -1442,10 +1457,11 @@ async def callback_dashboard(callback: CallbackQuery):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"📈 Dashboard requested by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user or user['role'] != 'admin':
         await callback.answer("❌ Только администраторы могут просматривать статистику", show_alert=True)
         return
@@ -1527,12 +1543,13 @@ async def callback_export_report(callback: CallbackQuery):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     report_type = callback.data.split('_')[1]  # full, status, users
     
     logger.info(f"📊 Excel export requested by {username}: {report_type}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user or user['role'] != 'admin':
         await callback.answer("❌ Только администраторы могут экспортировать отчёты", show_alert=True)
         return
@@ -1581,10 +1598,11 @@ async def callback_search_tasks(callback: CallbackQuery, state: FSMContext):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"🔍 Search tasks requested by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
@@ -1624,6 +1642,7 @@ async def process_search_query(message: Message, state: FSMContext):
     telegram_id = str(message.from_user.id)
     username = message.from_user.username
     first_name = message.from_user.first_name or ''
+    last_name = message.from_user.last_name or ''
     
     query = message.text.strip()
     
@@ -1635,7 +1654,7 @@ async def process_search_query(message: Message, state: FSMContext):
         )
         return
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await message.answer("❌ Доступ запрещён")
         await state.clear()
@@ -1789,8 +1808,9 @@ async def callback_cancel(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
@@ -1813,12 +1833,13 @@ async def callback_back_to_main(callback: CallbackQuery, state: FSMContext):
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
     
     logger.info(f"🔙 Back to main menu by {username}")
     
     await state.clear()
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     if not user:
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
@@ -1846,10 +1867,11 @@ async def handle_unauthorized(message: Message):
     telegram_id = str(message.from_user.id)
     username = message.from_user.username
     first_name = message.from_user.first_name or ''
+    last_name = message.from_user.last_name or ''
     
     logger.info(f"📨 Text message from {telegram_id} (@{username}): {message.text[:30] if message.text else 'no text'}")
     
-    user = get_or_create_user(telegram_id, username, first_name)
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
     
     if not user:
         logger.warning(f"⛔ Unauthorized access attempt by {telegram_id} (@{username})")
