@@ -190,7 +190,8 @@ def get_tasks_for_3h_reminder() -> List[Dict[str, Any]]:
 
 def get_tasks_for_1h_reminder() -> List[Dict[str, Any]]:
     """
-    Получить задачи, до срока которых осталось ~1 час
+    Получить задачи, до срока которых осталось меньше 1 часа
+    В последний час уведомления отправляются каждые 5 минут
     Проверка времени выполняется в Python с учётом timezone
     
     Returns:
@@ -221,7 +222,7 @@ def get_tasks_for_1h_reminder() -> List[Dict[str, Any]]:
         
         all_tasks = cur.fetchall()
         
-        # Фильтруем задачи с дедлайном ~1 час в Python с учётом timezone
+        # Фильтруем задачи с дедлайном в течение последнего часа
         now = get_now()
         reminder_tasks = []
         
@@ -232,14 +233,15 @@ def get_tasks_for_1h_reminder() -> List[Dict[str, Any]]:
                 if due_date.tzinfo is None:
                     due_date = TIMEZONE.localize(due_date)
                 
-                # Проверяем: до дедлайна осталось от 50 минут до 1 часа 10 минут
+                # Проверяем: до дедлайна осталось от 1 минуты до 60 минут
                 time_until = due_date - now
                 minutes_until = time_until.total_seconds() / 60
                 
-                if 50 <= minutes_until <= 70:
+                # В последний час отправляем уведомления постоянно (каждые 5 минут)
+                if 1 <= minutes_until <= 60:
                     reminder_tasks.append(task)
         
-        logger.info(f"📋 Found {len(reminder_tasks)} tasks for 1h reminder (checked {len(all_tasks)} active tasks)")
+        logger.info(f"📋 Found {len(reminder_tasks)} tasks for final hour alerts (checked {len(all_tasks)} active tasks)")
         return reminder_tasks
         
     finally:
@@ -421,16 +423,13 @@ async def send_3h_reminder(bot: Bot, task: Dict[str, Any]):
 
 async def send_1h_reminder(bot: Bot, task: Dict[str, Any]):
     """
-    Отправить уведомление за 1 час до срока
+    Отправить срочное уведомление в последний час
+    Отправляется каждые 5 минут без проверки дубликатов
     
     Args:
         bot: Экземпляр Telegram бота
         task: Данные задачи
     """
-    if check_notification_sent(task['id'], '1h'):
-        logger.debug(f"⏭️ 1h reminder already sent for task {task['id']}")
-        return
-    
     priority_emoji = {
         'urgent': '🔴',
         'high': '🟠',
@@ -440,14 +439,22 @@ async def send_1h_reminder(bot: Bot, task: Dict[str, Any]):
     
     emoji = priority_emoji.get(task['priority'], '📌')
     
+    # Вычисляем точное время до дедлайна
+    due_date = task['due_date']
+    if due_date.tzinfo is None:
+        due_date = TIMEZONE.localize(due_date)
+    now = get_now()
+    time_remaining = due_date - now
+    minutes_remaining = int(time_remaining.total_seconds() / 60)
+    
     description_text = task['description'][:100] if task.get('description') else "Нет описания"
     message = (
-        f"⚡ <b>ПОСЛЕДНЕЕ ПРЕДУПРЕЖДЕНИЕ!</b>\n\n"
+        f"🚨 <b>СРОЧНО! ПОСЛЕДНИЙ ЧАС!</b>\n\n"
         f"{emoji} <b>{task['title']}</b>\n"
         f"📝 {description_text}...\n\n"
-        f"⏳ <b>Срок: {task['due_date'].strftime('%d.%m.%Y %H:%M')}</b>\n"
-        f"🔥 Остался всего <b>~1 час</b>!\n\n"
-        f"⚡ <b>СРОЧНО завершите задачу!</b>"
+        f"⏳ <b>Дедлайн: {task['due_date'].strftime('%d.%m.%Y %H:%M')}</b>\n"
+        f"⏱ Осталось: <b>{minutes_remaining} мин</b>\n\n"
+        f"⚡ <b>СРОЧНО ЗАВЕРШИТЕ ЗАДАЧУ!</b>"
     )
     
     try:
@@ -457,11 +464,10 @@ async def send_1h_reminder(bot: Bot, task: Dict[str, Any]):
             parse_mode='HTML'
         )
         
-        mark_notification_sent(task['id'], '1h')
-        logger.info(f"✅ 1h reminder sent to {task['username']} for task #{task['id']}")
+        logger.info(f"⚡ Final hour alert sent to {task['username']} for task #{task['id']} ({minutes_remaining} min remaining)")
         
     except Exception as e:
-        logger.error(f"❌ Error sending 1h reminder for task {task['id']}: {e}")
+        logger.error(f"❌ Error sending final hour alert for task {task['id']}: {e}")
 
 
 async def send_overdue_notification(bot: Bot, task: Dict[str, Any]):

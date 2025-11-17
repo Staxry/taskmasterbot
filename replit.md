@@ -4,17 +4,22 @@ This project is a full-featured asynchronous Telegram bot designed for task mana
 
 ## Recent Updates (Nov 17, 2025)
 
+- **Implemented Frequent Final Hour Alerts**: Last-minute deadline urgency system
+  - During the final hour (1-60 minutes before deadline), notifications are sent **every 5 minutes**
+  - Each alert shows exact remaining time: "Осталось: X мин"
+  - No duplicate protection for final hour - ensures continuous reminders when most critical
+  - Alert message: "🚨 СРОЧНО! ПОСЛЕДНИЙ ЧАС!" with countdown timer
+
 - **Fixed Timezone Support in Notifications**: Corrected all reminder checks to properly work with Europe/Kaliningrad timezone
   - Fixed 24h/3h/1h reminder checks - now properly compare timezone-aware datetimes in Python instead of SQL
   - Fixed overdue task detection to account for UTC+2 timezone
-  - All reminder windows now work correctly: 24h (23-25h), 3h (2.5-3.5h), 1h (50-70min)
+  - All reminder windows now work correctly: 24h (23-25h), 3h (2.5-3.5h), final hour (1-60min continuous)
   - Changed timezone abbreviation from "(МСК)" to "(КЛД)" in all notifications
   - Added configurable TIMEZONE_ABBR in app/config.py for easy timezone label customization
 
 - **Enhanced Notification System**: Improved proactive deadline management
   - Check frequency increased from 30 minutes to 5 minutes for faster response
-  - Added 1-hour reminder notification (final warning before deadline)
-  - Three-tier reminder system: 24h → 3h → 1h warnings
+  - Multi-tier reminder system: 24h (single) → 3h (single) → final hour (repeated every 5min)
   - Reduced error recovery pause from 5 minutes to 1 minute
   - Overdue notifications now sent to both executor and all admins
   
@@ -79,11 +84,14 @@ A **background notification scheduler** runs alongside the bot, providing proact
 - **Implementation**: Asynchronous task created with `asyncio.create_task()`, properly cancelled during shutdown
 - **Check Frequency**: Every 5 minutes (300 seconds)
 - **Notification Types**:
-  - **24-hour reminder**: Sent to task assignee 24 hours before deadline
-  - **3-hour reminder**: Sent to task assignee 3 hours before deadline
-  - **1-hour reminder**: Sent to task assignee 1 hour before deadline (final warning)
-  - **Overdue alert**: Sent to all admins for tasks past deadline
-- **Smart Tracking**: Uses `task_notifications` table to prevent duplicate notifications (types: '24h', '3h', '1h', 'overdue')
+  - **24-hour reminder**: Sent once to task assignee ~24 hours before deadline
+  - **3-hour reminder**: Sent once to task assignee ~3 hours before deadline
+  - **Final hour alerts**: Sent **every 5 minutes** during the last hour (1-60 minutes before deadline)
+    - Shows exact countdown: "Осталось: X мин"
+    - No duplicate protection - ensures continuous urgency reminders
+    - Alert message: "🚨 СРОЧНО! ПОСЛЕДНИЙ ЧАС!"
+  - **Overdue alert**: Sent once to task executor and all admins when deadline passes
+- **Smart Tracking**: Uses `task_notifications` table to prevent duplicate notifications for 24h/3h/overdue (final hour alerts repeat every check)
 - **NULL-safe**: Handles tasks with missing descriptions gracefully
 - **Priority-aware**: Includes priority emoji indicators in notifications
 - **Quick Actions**: All notifications include "Open Task" button for direct access
