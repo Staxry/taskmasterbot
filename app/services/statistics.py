@@ -76,7 +76,7 @@ def get_dashboard_statistics(user_role: str = 'admin') -> Dict[str, Any]:
         cur.execute("""
             SELECT COUNT(*) as count 
             FROM tasks 
-            WHERE due_date < NOW() 
+            WHERE due_date < datetime('now') 
             AND status NOT IN ('completed', 'rejected')
         """)
         result = cur.fetchone()
@@ -86,7 +86,7 @@ def get_dashboard_statistics(user_role: str = 'admin') -> Dict[str, Any]:
         cur.execute("""
             SELECT COUNT(*) as count 
             FROM tasks 
-            WHERE DATE(created_at) = CURRENT_DATE
+            WHERE DATE(created_at) = DATE('now')
         """)
         result = cur.fetchone()
         stats['today_created'] = result['count'] if result else 0
@@ -96,7 +96,7 @@ def get_dashboard_statistics(user_role: str = 'admin') -> Dict[str, Any]:
             SELECT COUNT(*) as count 
             FROM tasks 
             WHERE status = 'completed'
-            AND updated_at >= NOW() - INTERVAL '7 days'
+            AND updated_at >= datetime('now', '-7 days')
         """)
         result = cur.fetchone()
         stats['completed_last_week'] = result['count'] if result else 0
@@ -353,10 +353,10 @@ def generate_excel_report(report_type: str = 'full') -> io.BytesIO:
                 t.priority,
                 t.due_date,
                 t.status,
-                EXTRACT(DAY FROM NOW() - t.due_date) as days_overdue
+                CAST((julianday('now') - julianday(t.due_date)) AS INTEGER) as days_overdue
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
-            WHERE t.due_date < NOW() 
+            WHERE t.due_date < datetime('now') 
             AND t.status NOT IN ('completed', 'rejected')
             ORDER BY t.due_date ASC
         """)

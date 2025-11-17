@@ -593,7 +593,7 @@ async def callback_task_details(callback: CallbackQuery):
 <b>Приоритет:</b> {priority_text}
 <b>Срок:</b> {due_date}
 <b>Назначена:</b> @{assigned_username or '🆓 Свободна (можно взять)'}
-<b>Создана:</b> {created_at.strftime('%Y-%m-%d %H:%M')}
+<b>Создана:</b> {created_at}
 """
         
         if status in ['completed', 'partially_completed'] and completion_comment:
@@ -1193,7 +1193,7 @@ async def callback_delete_confirm(callback: CallbackQuery):
             await callback.answer("❌ Задача не найдена.", show_alert=True)
             return
         
-        task_title = task[0]
+        task_title = task['title']
         
         cur.execute(
             "DELETE FROM tasks WHERE id = ?",
