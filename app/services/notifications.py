@@ -187,6 +187,7 @@ def get_tasks_for_1h_reminder() -> List[Dict[str, Any]]:
 def get_overdue_tasks() -> List[Dict[str, Any]]:
     """
     Получить просроченные задачи (срок прошёл менее суток назад)
+    Проверка времени выполняется в Python с учётом timezone
     
     Returns:
         List просроченных задач
@@ -195,6 +196,7 @@ def get_overdue_tasks() -> List[Dict[str, Any]]:
     cur = conn.cursor()
     
     try:
+        # Загружаем все активные задачи
         cur.execute("""
             SELECT 
                 t.id,
@@ -210,14 +212,29 @@ def get_overdue_tasks() -> List[Dict[str, Any]]:
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
             WHERE t.status NOT IN ('completed', 'rejected')
-            AND t.due_date < datetime('now')
-            AND t.due_date >= datetime('now', '-1 day')
+            AND t.due_date IS NOT NULL
         """)
         
-        tasks = cur.fetchall()
+        all_tasks = cur.fetchall()
         
-        logger.info(f"📋 Found {len(tasks)} overdue tasks")
-        return tasks
+        # Фильтруем просроченные задачи в Python с учётом timezone
+        now = get_now()
+        overdue_tasks = []
+        
+        for task in all_tasks:
+            due_date = task['due_date']
+            # Приводим к timezone-aware datetime если нужно
+            if isinstance(due_date, datetime):
+                if due_date.tzinfo is None:
+                    due_date = TIMEZONE.localize(due_date)
+                
+                # Задача просрочена, если дедлайн прошёл и прошло меньше суток
+                time_diff = now - due_date
+                if time_diff.total_seconds() > 0 and time_diff.days < 1:
+                    overdue_tasks.append(task)
+        
+        logger.info(f"📋 Found {len(overdue_tasks)} overdue tasks (checked {len(all_tasks)} active tasks)")
+        return overdue_tasks
         
     finally:
         cur.close()
@@ -386,7 +403,7 @@ async def send_1h_reminder(bot: Bot, task: Dict[str, Any]):
 
 async def send_overdue_notification(bot: Bot, task: Dict[str, Any]):
     """
-    Отправить уведомление админам о просроченной задаче
+    Отправить уведомление о просроченной задаче исполнителю и админам
     
     Args:
         bot: Экземпляр Telegram бота
@@ -417,7 +434,19 @@ async def send_overdue_notification(bot: Bot, task: Dict[str, Any]):
         executor_display = f"@{task['username']}"
     
     description_text = task['description'][:100] if task.get('description') else "Нет описания"
-    message = (
+    
+    # Сообщение для исполнителя
+    message_executor = (
+        f"❌ <b>ЗАДАЧА ПРОСРОЧЕНА!</b>\n\n"
+        f"{emoji} <b>{task['title']}</b>\n"
+        f"📝 {description_text}...\n\n"
+        f"⏳ Срок был: {task['due_date'].strftime('%d.%m.%Y %H:%M')}\n"
+        f"⚠️ Просрочено на <b>{days_overdue} дн.</b>\n\n"
+        f"⚡ <b>СРОЧНО завершите задачу!</b>"
+    )
+    
+    # Сообщение для админов (с информацией об исполнителе)
+    message_admin = (
         f"❌ <b>ЗАДАЧА ПРОСРОЧЕНА!</b>\n\n"
         f"{emoji} <b>{task['title']}</b>\n"
         f"📝 {description_text}...\n\n"
@@ -427,13 +456,26 @@ async def send_overdue_notification(bot: Bot, task: Dict[str, Any]):
         f"Требуется проверка и контроль выполнения."
     )
     
+    # Отправляем исполнителю
+    try:
+        await bot.send_message(
+            chat_id=task['telegram_id'],
+            text=message_executor,
+            parse_mode='HTML'
+        )
+        logger.info(f"✅ Overdue notification sent to executor {task['username']} for task #{task['id']}")
+        
+    except Exception as e:
+        logger.error(f"❌ Error sending overdue notification to executor {task['username']}: {e}")
+    
+    # Отправляем админам
     admins = get_all_admins()
     
     for admin_telegram_id in admins:
         try:
             await bot.send_message(
                 chat_id=admin_telegram_id,
-                text=message,
+                text=message_admin,
                 parse_mode='HTML'
             )
             logger.info(f"✅ Overdue notification sent to admin {admin_telegram_id} for task #{task['id']}")
