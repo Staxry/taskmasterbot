@@ -264,6 +264,136 @@ def generate_excel_report(report_type: str = 'full') -> io.BytesIO:
     except Exception as e:
         logger.error(f"❌ Error generating charts: {e}", exc_info=True)
     
+    # Добавляем детальные таблицы по исполнителям
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Лист с выполненными задачами по исполнителям
+        ws_completed = wb.create_sheet(title="Выполненные задачи")
+        ws_completed['A1'] = "Выполненные задачи по исполнителям"
+        ws_completed['A1'].font = Font(size=14, bold=True)
+        ws_completed['A1'].fill = PatternFill(start_color="70AD47", end_color="70AD47", fill_type="solid")
+        ws_completed['A1'].font = Font(size=14, bold=True, color="FFFFFF")
+        
+        # Заголовки таблицы
+        ws_completed['A3'] = "Исполнитель"
+        ws_completed['B3'] = "ID Задачи"
+        ws_completed['C3'] = "Название"
+        ws_completed['D3'] = "Приоритет"
+        ws_completed['E3'] = "Дата завершения"
+        
+        for col in ['A3', 'B3', 'C3', 'D3', 'E3']:
+            ws_completed[col].font = Font(bold=True)
+            ws_completed[col].fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+        
+        # Получаем выполненные задачи
+        cur.execute("""
+            SELECT 
+                u.username,
+                t.id,
+                t.title,
+                t.priority,
+                t.updated_at
+            FROM tasks t
+            JOIN users u ON t.assigned_to_id = u.id
+            WHERE t.status = 'completed'
+            ORDER BY u.username, t.updated_at DESC
+        """)
+        
+        completed_tasks = cur.fetchall()
+        row_completed = 4
+        for username, task_id, title, priority, updated_at in completed_tasks:
+            ws_completed[f'A{row_completed}'] = username
+            ws_completed[f'B{row_completed}'] = task_id
+            ws_completed[f'C{row_completed}'] = title[:50]  # Ограничение длины
+            ws_completed[f'D{row_completed}'] = priority
+            ws_completed[f'E{row_completed}'] = updated_at.strftime('%d.%m.%Y %H:%M') if updated_at else ''
+            row_completed += 1
+        
+        # Автоширина столбцов
+        ws_completed.column_dimensions['A'].width = 20
+        ws_completed.column_dimensions['B'].width = 10
+        ws_completed.column_dimensions['C'].width = 40
+        ws_completed.column_dimensions['D'].width = 12
+        ws_completed.column_dimensions['E'].width = 18
+        
+        logger.info(f"✅ Added {len(completed_tasks)} completed tasks to report")
+        
+        # Лист с просроченными задачами
+        ws_overdue = wb.create_sheet(title="Просроченные задачи")
+        ws_overdue['A1'] = "Просроченные задачи по исполнителям"
+        ws_overdue['A1'].font = Font(size=14, bold=True)
+        ws_overdue['A1'].fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
+        ws_overdue['A1'].font = Font(size=14, bold=True, color="FFFFFF")
+        
+        # Заголовки таблицы
+        ws_overdue['A3'] = "Исполнитель"
+        ws_overdue['B3'] = "ID Задачи"
+        ws_overdue['C3'] = "Название"
+        ws_overdue['D3'] = "Приоритет"
+        ws_overdue['E3'] = "Срок выполнения"
+        ws_overdue['F3'] = "Статус"
+        ws_overdue['G3'] = "Просрочено дней"
+        
+        for col in ['A3', 'B3', 'C3', 'D3', 'E3', 'F3', 'G3']:
+            ws_overdue[col].font = Font(bold=True)
+            ws_overdue[col].fill = PatternFill(start_color="FFE699", end_color="FFE699", fill_type="solid")
+        
+        # Получаем просроченные задачи
+        cur.execute("""
+            SELECT 
+                u.username,
+                t.id,
+                t.title,
+                t.priority,
+                t.due_date,
+                t.status,
+                EXTRACT(DAY FROM NOW() - t.due_date) as days_overdue
+            FROM tasks t
+            JOIN users u ON t.assigned_to_id = u.id
+            WHERE t.due_date < NOW() 
+            AND t.status NOT IN ('completed', 'rejected')
+            ORDER BY t.due_date ASC
+        """)
+        
+        overdue_tasks = cur.fetchall()
+        row_overdue = 4
+        for username, task_id, title, priority, due_date, status, days_overdue in overdue_tasks:
+            ws_overdue[f'A{row_overdue}'] = username
+            ws_overdue[f'B{row_overdue}'] = task_id
+            ws_overdue[f'C{row_overdue}'] = title[:50]
+            ws_overdue[f'D{row_overdue}'] = priority
+            ws_overdue[f'E{row_overdue}'] = due_date.strftime('%d.%m.%Y') if due_date else ''
+            ws_overdue[f'F{row_overdue}'] = status
+            ws_overdue[f'G{row_overdue}'] = int(days_overdue) if days_overdue else 0
+            
+            # Красный цвет для строк с высокой просрочкой
+            if days_overdue and days_overdue > 7:
+                for col in ['A', 'B', 'C', 'D', 'E', 'F', 'G']:
+                    ws_overdue[f'{col}{row_overdue}'].fill = PatternFill(
+                        start_color="FFB3B3", end_color="FFB3B3", fill_type="solid"
+                    )
+            
+            row_overdue += 1
+        
+        # Автоширина столбцов
+        ws_overdue.column_dimensions['A'].width = 20
+        ws_overdue.column_dimensions['B'].width = 10
+        ws_overdue.column_dimensions['C'].width = 40
+        ws_overdue.column_dimensions['D'].width = 12
+        ws_overdue.column_dimensions['E'].width = 15
+        ws_overdue.column_dimensions['F'].width = 15
+        ws_overdue.column_dimensions['G'].width = 15
+        
+        logger.info(f"✅ Added {len(overdue_tasks)} overdue tasks to report")
+        
+    except Exception as e:
+        logger.error(f"❌ Error adding detailed task tables: {e}", exc_info=True)
+    finally:
+        cur.close()
+        conn.close()
+    
     # Сохранение в BytesIO
     output = io.BytesIO()
     wb.save(output)
