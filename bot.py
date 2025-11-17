@@ -710,11 +710,55 @@ async def callback_update_status(callback: CallbackQuery):
         
         await callback.answer(f"✅ Статус обновлён на: {status_text}", show_alert=True)
         
-        await callback_task_details(callback)
+        # Обновляем отображение задачи с новым статусом
+        cur.execute(
+            """SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, 
+                      u.username, t.created_at
+               FROM tasks t
+               LEFT JOIN users u ON t.assigned_to_id = u.id
+               WHERE t.id = %s""",
+            (task_id,)
+        )
+        updated_task = cur.fetchone()
+        
+        if updated_task:
+            tid, title, description, status, priority, due_date, assigned_username, created_at = updated_task
+            
+            status_display = {
+                'pending': '⏳ Ожидает',
+                'in_progress': '🔄 В работе',
+                'completed': '✅ Завершена',
+                'rejected': '❌ Отклонена'
+            }.get(status, status)
+            
+            priority_display = {
+                'urgent': '🔴 Срочно',
+                'high': '🟠 Высокий',
+                'medium': '🟡 Средний',
+                'low': '🟢 Низкий'
+            }.get(priority, priority)
+            
+            text = f"""📋 <b>Задача #{tid}</b>
+
+<b>Название:</b> {title}
+<b>Описание:</b> {description or 'Нет описания'}
+<b>Статус:</b> {status_display}
+<b>Приоритет:</b> {priority_display}
+<b>Срок:</b> {due_date}
+<b>Назначена:</b> @{assigned_username or 'Не назначена'}
+<b>Создана:</b> {created_at.strftime('%Y-%m-%d %H:%M')}
+
+Выберите новый статус:"""
+            
+            await callback.message.edit_text(
+                text,
+                parse_mode='HTML',
+                reply_markup=get_task_keyboard(task_id, status)
+            )
     
     except Exception as e:
-        logger.error(f"Error updating status: {e}")
-        await callback.answer(f"❌ Ошибка при обновлении статуса", show_alert=True)
+        logger.error(f"Error updating status: {e}", exc_info=True)
+        await callback.answer(f"❌ Ошибка при обновлении статуса: {str(e)}", show_alert=True)
     finally:
         cur.close()
         conn.close()
@@ -855,7 +899,7 @@ async def process_assignee(callback: CallbackQuery, state: FSMContext):
     try:
         # Получаем информацию об исполнителе
         cur.execute(
-            "SELECT username FROM users WHERE id = %s",
+            "SELECT username, telegram_id FROM users WHERE id = %s",
             (assignee_id,)
         )
         assignee = cur.fetchone()
@@ -864,6 +908,9 @@ async def process_assignee(callback: CallbackQuery, state: FSMContext):
             await callback.answer("❌ Исполнитель не найден", show_alert=True)
             await state.clear()
             return
+        
+        assignee_username = assignee[0]
+        assignee_telegram_id = assignee[1]
         
         # Создаём задачу
         cur.execute(
@@ -882,6 +929,7 @@ async def process_assignee(callback: CallbackQuery, state: FSMContext):
         )
         conn.commit()
         task = cur.fetchone()
+        task_id = task[0]
         
         priority_text = {
             'urgent': '🔴 Срочно',
@@ -896,15 +944,39 @@ async def process_assignee(callback: CallbackQuery, state: FSMContext):
             f"Название: {task[1]}\n"
             f"Приоритет: {priority_text}\n"
             f"Срок: 📅 {due_date}\n"
-            f"Исполнитель: @{assignee[0]}\n"
-            f"Статус: ⏳ Ожидает",
+            f"Исполнитель: @{assignee_username}\n"
+            f"Статус: ⏳ Ожидает\n\n"
+            f"📨 Уведомление отправлено исполнителю",
             parse_mode='HTML',
             reply_markup=get_main_keyboard(user['role'])
         )
         await callback.answer()
         await state.clear()
         
-        logger.info(f"✅ Task created: {title} assigned to {assignee[0]} by {username}")
+        # Отправляем уведомление исполнителю
+        try:
+            notification_text = f"""📋 <b>Вам назначена новая задача!</b>
+
+<b>Задача #{task_id}</b>
+<b>Название:</b> {title}
+<b>Описание:</b> {description or 'Нет описания'}
+<b>Приоритет:</b> {priority_text}
+<b>Срок:</b> 📅 {due_date}
+<b>Создал:</b> @{username}
+<b>Статус:</b> ⏳ Ожидает
+
+Используйте /start для просмотра задачи."""
+            
+            await bot.send_message(
+                chat_id=assignee_telegram_id,
+                text=notification_text,
+                parse_mode='HTML'
+            )
+            logger.info(f"✅ Notification sent to {assignee_username} (task #{task_id})")
+        except Exception as notif_error:
+            logger.warning(f"⚠️ Could not send notification to {assignee_username}: {notif_error}")
+        
+        logger.info(f"✅ Task created: {title} assigned to {assignee_username} by {username}")
     
     except Exception as e:
         logger.error(f"Error creating task: {e}")
