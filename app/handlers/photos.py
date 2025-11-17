@@ -379,10 +379,12 @@ async def create_task_with_photo(callback_or_message, state: FSMContext, photo_f
         telegram_id = str(callback_or_message.from_user.id)
         username = callback_or_message.from_user.username
         first_name = callback_or_message.from_user.first_name or ''
+        last_name = callback_or_message.from_user.last_name or ''
     else:
         telegram_id = str(callback_or_message.from_user.id)
         username = callback_or_message.from_user.username
         first_name = callback_or_message.from_user.first_name or ''
+        last_name = callback_or_message.from_user.last_name or ''
     
     logger.info(f"➕ Creating task by {username}, has_photo={bool(photo_file_id)}")
     

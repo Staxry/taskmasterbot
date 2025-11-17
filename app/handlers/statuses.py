@@ -171,7 +171,7 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
         
         cur.execute(
             """SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, 
-                      u.username, t.created_at, t.assigned_to_id, t.completion_comment, t.photo_file_id
+                      u.username, u.first_name, u.last_name, t.created_at, t.assigned_to_id, t.completion_comment, t.photo_file_id
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
                WHERE t.id = ?""",
@@ -185,12 +185,26 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
             description = updated_task['description']
             status = updated_task['status']
             priority = updated_task['priority']
-            due_date = updated_task['due_date']
+            due_date_raw = updated_task['due_date']
             assigned_username = updated_task.get('username')
+            assigned_first_name = updated_task.get('first_name')
+            assigned_last_name = updated_task.get('last_name')
             created_at = updated_task['created_at']
             assigned_to_id = updated_task['assigned_to_id']
             completion_comment = updated_task.get('completion_comment')
             photo_file_id = updated_task.get('photo_file_id')
+            
+            from app.config import format_datetime_for_display
+            due_date = format_datetime_for_display(due_date_raw)
+            created_at_formatted = format_datetime_for_display(created_at)
+            
+            if assigned_username:
+                if assigned_first_name or assigned_last_name:
+                    assignee_display = f"{assigned_first_name or ''} {assigned_last_name or ''}".strip() + f" (@{assigned_username})"
+                else:
+                    assignee_display = f"@{assigned_username}"
+            else:
+                assignee_display = "Не назначена"
             
             status_display = {
                 'pending': '⏳ Ожидает',
@@ -214,8 +228,8 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
 <b>Статус:</b> {status_display}
 <b>Приоритет:</b> {priority_display}
 <b>Срок:</b> {due_date}
-<b>Назначена:</b> @{assigned_username or 'Не назначена'}
-<b>Создана:</b> {created_at}
+<b>Назначена:</b> {assignee_display}
+<b>Создана:</b> {created_at_formatted}
 """
             
             if status in ['completed', 'partially_completed'] and completion_comment:

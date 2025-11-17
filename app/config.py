@@ -39,6 +39,34 @@ def combine_datetime(date_str: str, time_str: str):
     # Добавляем часовой пояс
     return TIMEZONE.localize(naive_dt)
 
+
+def format_datetime_for_display(dt_value) -> str:
+    """
+    Форматировать дату/время для отображения пользователю
+    
+    Args:
+        dt_value: Может быть строкой, datetime объектом или None
+        
+    Returns:
+        str: Отформатированная дата в формате 'DD.MM.YYYY HH:MM' или 'не указан'
+    """
+    from datetime import datetime
+    
+    if not dt_value:
+        return 'не указан'
+    
+    if isinstance(dt_value, str):
+        try:
+            dt = datetime.fromisoformat(dt_value.replace('Z', '+00:00'))
+            return dt.strftime('%d.%m.%Y %H:%M')
+        except:
+            return dt_value
+    
+    if hasattr(dt_value, 'strftime'):
+        return dt_value.strftime('%d.%m.%Y %H:%M')
+    
+    return str(dt_value)
+
 # Database Configuration (SQLite)
 # По умолчанию БД создаётся в файле data/task_bot.db
 DATABASE_PATH = os.getenv('DATABASE_PATH', 'data/task_bot.db')
