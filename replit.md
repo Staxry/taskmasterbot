@@ -121,8 +121,13 @@ A **centralized logging system** is configured via `app.logging_config`, providi
 
 ## Deployment & Management
 
-- **Environment Variables**: Managed via Replit Secrets or a `.env` file for `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, and `SESSION_SECRET`.
-- **`START_BOT.sh`**: An interactive script for starting, stopping, restarting, and checking bot status, with options for systemd service management on Ubuntu servers.
+- **Environment Variables**: 
+  - На **Replit**: Используются Replit Secrets (приоритетно)
+  - На **внешнем сервере**: Создайте файл `.env` в корне проекта с токеном бота
+  - Файл `.env.example` предоставляет шаблон для всех необходимых переменных
+  - Основные переменные: `TELEGRAM_BOT_TOKEN`, `DATABASE_PATH`, `TIMEZONE`, `TIMEZONE_ABBR`
+  - Подробная инструкция по развертыванию в файле `DEPLOY_SERVER.md`
+- **`START_BOT.sh`**: Интерактивный скрипт для запуска, остановки, перезапуска и проверки статуса бота с опциями управления systemd службой на серверах Ubuntu.
 
 ## Polling vs. Webhook
 
