@@ -95,7 +95,14 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
         task_info = cur.fetchone()
         
         if task_info:
-            task_id, title, description, priority, due_date, created_by_id, creator_username, creator_telegram_id = task_info
+            task_id_val = task_info['id']
+            title = task_info['title']
+            description = task_info['description']
+            priority = task_info['priority']
+            due_date = task_info['due_date']
+            created_by_id = task_info['created_by_id']
+            creator_username = task_info.get('creator_username')
+            creator_telegram_id = task_info.get('creator_telegram_id')
             
             priority_text = {
                 'urgent': '🔴 Срочно',
@@ -115,18 +122,17 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
                 reply_markup=get_main_keyboard(user['role'])
             )
             
-            logger.info(f"✅ Task #{task_id} completed with status {new_status}")
+            logger.info(f"✅ Task #{task_id_val} completed with status {new_status}")
             
             if created_by_id and creator_telegram_id:
                 try:
-                    # Форматируем дату с учётом часового пояса
-                    due_date_aware = due_date if due_date.tzinfo else TIMEZONE.localize(due_date)
-                    due_date_str = due_date_aware.strftime('%d.%m.%Y %H:%M')
+                    # Форматируем дату (SQLite возвращает строку)
+                    due_date_str = due_date if due_date else 'не указан'
                     
                     if new_status == 'completed':
                         notification_text = f"""✅ <b>Задача завершена!</b>
 
-<b>Задача #{task_id}</b>
+<b>Задача #{task_id_val}</b>
 <b>Название:</b> {title}
 <b>Приоритет:</b> {priority_text}
 <b>Срок был:</b> 📅 {due_date_str} (МСК)
@@ -138,7 +144,7 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
                     else:
                         notification_text = f"""🔶 <b>Задача частично завершена!</b>
 
-<b>Задача #{task_id}</b>
+<b>Задача #{task_id_val}</b>
 <b>Название:</b> {title}
 <b>Приоритет:</b> {priority_text}
 <b>Срок:</b> 📅 {due_date_str} (МСК)
@@ -149,7 +155,7 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
 Задача ещё в работе. Нажмите кнопку ниже для просмотра."""
                     
                     task_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="📂 Открыть задачу", callback_data=f"task_{task_id}")]
+                        [InlineKeyboardButton(text="📂 Открыть задачу", callback_data=f"task_{task_id_val}")]
                     ])
                     
                     logger.info(f"📨 Sending completion notification to {creator_username}")
@@ -160,7 +166,7 @@ async def callback_photo_no(callback: CallbackQuery, state: FSMContext):
                         parse_mode='HTML',
                         reply_markup=task_keyboard
                     )
-                    logger.info(f"✅ Completion notification sent to {creator_username} (task #{task_id})")
+                    logger.info(f"✅ Completion notification sent to {creator_username} (task #{task_id_val})")
                 except Exception as notif_error:
                     logger.warning(f"⚠️ Could not send completion notification: {notif_error}")
         
@@ -223,7 +229,14 @@ async def process_completion_photo(message: Message, state: FSMContext):
         task_info = cur.fetchone()
         
         if task_info:
-            task_id, title, description, priority, due_date, created_by_id, creator_username, creator_telegram_id = task_info
+            task_id_val = task_info['id']
+            title = task_info['title']
+            description = task_info['description']
+            priority = task_info['priority']
+            due_date = task_info['due_date']
+            created_by_id = task_info['created_by_id']
+            creator_username = task_info.get('creator_username')
+            creator_telegram_id = task_info.get('creator_telegram_id')
             
             priority_text = {
                 'urgent': '🔴 Срочно',
@@ -243,18 +256,17 @@ async def process_completion_photo(message: Message, state: FSMContext):
                 reply_markup=get_main_keyboard(user['role'])
             )
             
-            logger.info(f"✅ Task #{task_id} completed with status {new_status} and photo")
+            logger.info(f"✅ Task #{task_id_val} completed with status {new_status} and photo")
             
             if created_by_id and creator_telegram_id:
                 try:
-                    # Форматируем дату с учётом часового пояса
-                    due_date_aware = due_date if due_date.tzinfo else TIMEZONE.localize(due_date)
-                    due_date_str = due_date_aware.strftime('%d.%m.%Y %H:%M')
+                    # Форматируем дату (SQLite возвращает строку)
+                    due_date_str = due_date if due_date else 'не указан'
                     
                     if new_status == 'completed':
                         caption = f"""✅ <b>Задача завершена!</b>
 
-<b>Задача #{task_id}</b>
+<b>Задача #{task_id_val}</b>
 <b>Название:</b> {title}
 <b>Приоритет:</b> {priority_text}
 <b>Срок был:</b> 📅 {due_date_str} (МСК)
@@ -266,7 +278,7 @@ async def process_completion_photo(message: Message, state: FSMContext):
                     else:
                         caption = f"""🔶 <b>Задача частично завершена!</b>
 
-<b>Задача #{task_id}</b>
+<b>Задача #{task_id_val}</b>
 <b>Название:</b> {title}
 <b>Приоритет:</b> {priority_text}
 <b>Срок:</b> 📅 {due_date_str} (МСК)
@@ -277,7 +289,7 @@ async def process_completion_photo(message: Message, state: FSMContext):
 Задача ещё в работе. Нажмите кнопку ниже для просмотра."""
                     
                     task_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="📂 Открыть задачу", callback_data=f"task_{task_id}")]
+                        [InlineKeyboardButton(text="📂 Открыть задачу", callback_data=f"task_{task_id_val}")]
                     ])
                     
                     logger.info(f"📨 Sending completion notification WITH photo to {creator_username}")
@@ -289,7 +301,7 @@ async def process_completion_photo(message: Message, state: FSMContext):
                         parse_mode='HTML',
                         reply_markup=task_keyboard
                     )
-                    logger.info(f"✅ Completion notification with photo sent to {creator_username} (task #{task_id})")
+                    logger.info(f"✅ Completion notification with photo sent to {creator_username} (task #{task_id_val})")
                 except Exception as notif_error:
                     logger.warning(f"⚠️ Could not send completion notification: {notif_error}")
         
