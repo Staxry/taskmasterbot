@@ -1,44 +1,38 @@
 # Overview
 
-This is a Mastra-based AI automation platform built for Replit that enables task management via Telegram webhooks. The system uses Mastra's agent framework to process natural language messages, create and manage tasks, and interact with users through a Telegram bot interface.
+Это полноценный асинхронный Telegram бот для управления задачами, построенный на Python с использованием библиотеки **aiogram**. Бот работает по командам (без AI) и использует **polling** (постоянное опрашивание Telegram API) вместо webhook - **полностью бесплатно**!
 
-The application demonstrates a production-ready implementation of:
-- Command-based bot without AI (fully free)
-- Webhook-triggered workflows for real-time interaction
-- Database-backed task management system with role-based access (admin/employee)
-- Durable execution with Inngest integration
-- Telegram slash commands in Russian
+Система демонстрирует производственно-готовую реализацию:
+- Асинхронный бот на aiogram 3.22 с polling
+- Система управления задачами с ролевым доступом (admin/employee)
+- База данных PostgreSQL для хранения пользователей и задач
+- Команды на русском языке
+- Полностью бесплатная работа (без затрат на AI)
 
 ## Current Status (November 17, 2025)
 
-✅ **Production-ready and validated (Command-Based, No AI)**
+✅ **Готов к использованию (Python + Aiogram + Polling)**
 
-All core components have been reimplemented without AI and passed architect review:
-- Database schema with users and tasks tables
-- Command handler for Telegram commands (no AI/LLM)
-- Two-step workflow (parse command + send response)
-- Telegram webhook trigger
-- **Validated error handling:**
-  - Task assignment with Telegram ID lookup
-  - Numeric ID validation (только цифры)
-  - Clear error messages for missing users
-  - Production logging for debugging
-- **Fully free** - no AI API costs
+Все компоненты реализованы на Python и протестированы:
+- База данных PostgreSQL с таблицами users и tasks
+- Асинхронный бот на aiogram с polling (без webhook)
+- Все команды: /start, /help, /my_tasks, /all_tasks, /task_details, /update_status, /create_task
+- Валидация прав доступа (admin vs employee)
+- Обработка ошибок и валидация данных
+- **Полностью бесплатно** - без затрат на AI API
 
-**Recent Critical Fixes (Nov 17, 2025):**
-- ✅ Fixed task assignment: now correctly resolves Telegram IDs to internal user IDs
-- ✅ Added validation: rejects non-numeric Telegram IDs with clear error messages
-- ✅ Added production logging: console.log statements for assignment flow debugging
-- ✅ Improved user feedback: shows assigned user info in success responses
+**Последние изменения (17 ноября 2025):**
+- ✅ Полностью переписан на Python + aiogram
+- ✅ Удалены все TypeScript/Mastra файлы
+- ✅ Использован polling вместо webhook (работает сразу, без публикации)
+- ✅ Асинхронная обработка команд через aiogram
+- ✅ Все команды реализованы и работают
 
-**Changes from previous version:**
-- ❌ Removed AI agent (GPT-5) and natural language understanding
-- ✅ Added command parser for explicit commands (/start, /create_task, etc.)
-- ✅ Completely free operation (no LLM API calls)
-- ✅ Faster response times
-- ✅ Predictable behavior
-
-**Next step**: Publish the application and register the Telegram webhook using the guide in `TELEGRAM_BOT_GUIDE.md`
+**Как использовать:**
+1. Бот уже запущен и работает в фоне
+2. Откройте Telegram и найдите вашего бота (username из @BotFather)
+3. Отправьте `/start` для регистрации
+4. Используйте `/help` для просмотра команд
 
 # User Preferences
 
@@ -48,120 +42,207 @@ Preferred communication style: Simple, everyday language (Russian).
 
 ## Core Framework
 
-**Mastra v0.20.0** serves as the foundation, providing:
-- Agent orchestration with LLM reasoning
-- Workflow execution with step-based composition
-- Memory management for conversation persistence
-- Tool integration for external functionality
+**Python 3.11 + aiogram 3.22** - основа приложения:
+- Асинхронная обработка команд через asyncio
+- Polling режим (постоянное опрашивание Telegram API)
+- MemoryStorage для FSM (Finite State Machine)
+- Автоматическая обработка обновлений от Telegram
 
 ## Database Layer
 
-**PostgreSQL with Drizzle ORM** handles all persistent data:
-- **Schema Design**: Three main tables (users, tasks) with enum types for roles, priorities, and task statuses
-- **Relations**: Foreign key relationships between users and tasks (assignedTo, createdBy)
-- **Connection**: Uses `postgres-js` driver with connection string from `DATABASE_URL` environment variable
-- **Migration Strategy**: Drizzle Kit manages schema migrations with output to `./drizzle` directory
+**PostgreSQL с psycopg2** для работы с данными:
+- **Schema Design**: Две основные таблицы (users, tasks) с enum типами для ролей, приоритетов и статусов
+- **Relations**: Foreign key связи между users и tasks (assigned_to_id, created_by_id)
+- **Connection**: Синхронный драйвер psycopg2 с подключением через `DATABASE_URL`
+- **Migration Strategy**: Схема создана через Drizzle (из предыдущей версии)
 
 **Key Entities**:
 - Users: Telegram ID (unique), username, role (admin/employee), timestamps
 - Tasks: Title, description, priority (low/medium/high/urgent), status (pending/in_progress/completed/rejected), due date, assignment tracking
 
-## Command Handler Architecture
+## Bot Architecture
 
-**Command Parser** (src/handlers/telegramCommandHandler.ts) processes Telegram commands:
-- Explicit command parsing (/ start, /create_task, /my_tasks, etc.)
-- Direct database operations without LLM
-- Role-based access control
-- Parameter parsing for task creation
-- No AI dependencies - fully deterministic
+**Aiogram Handlers** (bot.py) обрабатывают команды Telegram:
+- Декораторы @dp.message для регистрации обработчиков
+- Command filters для фильтрации команд
+- Асинхронные функции для обработки запросов
+- Прямое взаимодействие с PostgreSQL через psycopg2
+- Валидация прав доступа на уровне обработчиков
 
-**Handler Pattern**: Single command handler processes all Telegram commands and returns structured responses.
+**Handler Pattern**: Каждая команда имеет свой асинхронный обработчик, который:
+1. Получает или создаёт пользователя в БД
+2. Проверяет права доступа
+3. Выполняет операцию с БД
+4. Отправляет ответ через Telegram Bot API
 
-## Workflow Orchestration
+## Polling vs Webhook
 
-**Inngest Integration** provides durable execution:
-- Workflows defined as composable steps
-- Automatic retry handling for transient failures
-- Suspend/resume capability for human-in-the-loop scenarios
-- Real-time monitoring via Inngest middleware
+**Текущая реализация: Polling**
+- ✅ Работает сразу после запуска
+- ✅ Не требует публикации Replit приложения
+- ✅ Не требует HTTPS сертификата
+- ✅ Проще в настройке и отладке
+- Бот постоянно опрашивает Telegram API на наличие новых сообщений
 
-**Workflow Pattern**: Event-driven execution triggered by Telegram webhooks, with steps that can call agents, tools, or external APIs.
-
-## Webhook Integration
-
-**Telegram Bot API** serves as the primary user interface:
-- POST endpoint at `/webhooks/telegram/action` receives messages
-- Webhook registration script for Replit deployment
-- Message payload processing with telegramId extraction
-- Bot token authentication via environment variable
-
-**Trigger System**: Modular trigger registration pattern allows adding new connectors (Slack, Linear, etc.) by following the template in `src/triggers/`.
-
-## Logging & Observability
-
-**Production Pino Logger** (custom implementation):
-- JSON-formatted structured logging
-- Configurable log levels (DEBUG, INFO, WARN, ERROR)
-- ISO timestamp formatting
-- Request/response tracking through Mastra integration
-
-## Development Tools
-
-**TypeScript Configuration**:
-- ES2022 target with ES module system
-- Bundler module resolution for modern tooling
-- Strict type checking enabled
-- No emit mode for type checking only
-
-**Mastra CLI**:
-- `mastra dev` for local development with hot reload
-- `mastra build` for production builds
-- Integrated playground UI for testing workflows/agents
+**Преимущества polling для разработки:**
+- Мгновенный запуск - просто `python bot.py`
+- Не нужно настраивать webhook URL
+- Легко тестировать локально
+- Подходит для Replit (бесплатный tier)
 
 ## Design Decisions
 
-**Why PostgreSQL over LibSQL**: Production deployments benefit from PostgreSQL's proven reliability, pgvector extension for semantic search, and widespread hosting support. LibSQL shown in examples but Postgres recommended for production.
+**Почему Python + aiogram**: Простота разработки, отличная документация, асинхронность из коробки, большое сообщество.
 
-**Why Inngest**: Provides durable execution out-of-the-box without managing infrastructure. Critical for production reliability when workflows need to survive server restarts or handle long-running operations.
+**Почему Polling**: Проще в настройке, работает без публикации, идеально для разработки и тестирования.
 
-**Why Single Agent**: Task domain is well-defined enough that a single specialized agent handles all operations effectively. Agent networks would add complexity without clear benefit for this use case.
+**Почему PostgreSQL**: Надёжная реляционная БД с поддержкой транзакций, foreign keys, и сложных запросов.
 
-**Why Telegram**: Provides instant messaging interface familiar to users, webhook-based integration, and no need for separate frontend development. Easy to extend to other messaging platforms using same trigger pattern.
+**Почему без AI**: Полностью бесплатная работа, предсказуемое поведение, быстрая обработка команд.
 
 # External Dependencies
 
 ## AI/LLM Services
-- **None**: This version uses command-based approach without any AI/LLM
-- **Previous version used**: OpenAI GPT-5 via Replit AI Integrations (removed)
+- **None**: Бот работает без AI - только команды
 
 ## Database & Storage
-- **PostgreSQL**: Primary database (connection via `DATABASE_URL`)
-- **Drizzle ORM**: Type-safe database toolkit (v0.44.7)
-- **postgres-js**: PostgreSQL client driver (v3.4.7)
+- **PostgreSQL**: Основная база данных (подключение через `DATABASE_URL`)
+- **psycopg2-binary**: Синхронный PostgreSQL драйвер (v2.9.11)
+- **asyncpg**: Асинхронный PostgreSQL драйвер (v0.30.0) - установлен, но не используется
 
-## Messaging Platform
-- **Telegram Bot API**: Webhook integration (requires `TELEGRAM_BOT_TOKEN`)
-- **@slack/web-api**: Slack integration capability (v7.9.3)
-
-## Workflow Orchestration
-- **Inngest**: Durable execution platform (v3.40.2)
-- **@inngest/realtime**: Real-time workflow monitoring
-
-## Mastra Ecosystem
-- **@mastra/core**: Framework foundation (v0.20.0)
-- **@mastra/pg**: PostgreSQL adapter (v0.17.1)
-- **@mastra/memory**: Conversation persistence (v0.15.5)
-- **@mastra/inngest**: Inngest integration (v0.16.0)
-- **@mastra/loggers**: Logging abstractions (v0.10.15)
-- **@mastra/mcp**: MCP protocol support (v0.13.3)
+## Telegram Integration
+- **aiogram**: Асинхронная библиотека для Telegram Bot API (v3.22.0)
+- **aiohttp**: HTTP клиент для асинхронных запросов (v3.12.15)
+- **Telegram Bot API**: Взаимодействие через polling
 
 ## Utilities
-- **Zod**: Schema validation (v3.25.76)
-- **dotenv**: Environment variable management
-- **pino**: Structured logging (v9.9.4)
-- **tsx**: TypeScript execution (v4.20.3)
+- **python-dotenv**: Загрузка environment variables (v1.2.1)
+- **typing-extensions**: Расширенная поддержка типов (v4.15.0)
 
 ## Development
-- **TypeScript**: v5.9.3
-- **Prettier**: Code formatting (v3.6.2)
-- **Node.js**: Requires >=20.9.0
+- **Python**: v3.11
+- **uv**: Менеджер пакетов (используется Replit)
+
+# File Structure
+
+```
+.
+├── bot.py              # Основной файл бота (aiogram)
+├── README.md           # Документация на русском
+├── replit.md           # Этот файл (архитектура проекта)
+├── shared/
+│   ├── schema.ts       # Схема БД (Drizzle, устаревшая)
+│   └── db.ts           # Подключение к БД (устаревшее)
+└── pyproject.toml      # Python зависимости (управляется uv)
+```
+
+# Available Commands
+
+## Общие команды
+- `/start` или `/старт` - Регистрация / приветствие
+- `/help` или `/помощь` - Список команд
+
+## Команды для всех пользователей
+- `/my_tasks` или `/мои_задачи` - Список ваших задач
+- `/task_details <ID>` или `/детали_задачи <ID>` - Детали задачи
+- `/update_status <ID> <статус>` или `/обновить_статус <ID> <статус>` - Обновить статус
+
+## Команды администратора
+- `/create_task` или `/создать_задачу` - Создать задачу
+- `/all_tasks` или `/все_задачи` - Все задачи в системе
+
+## Формат создания задачи
+
+```
+/create_task title:"название" description:"описание" priority:high due_date:2025-12-25 assigned_to:telegram_id
+```
+
+**Параметры:**
+- `title:"..."` - название (обязательно)
+- `description:"..."` - описание (опционально)
+- `priority:` - low/medium/high/urgent (по умолчанию: medium)
+- `due_date:` - YYYY-MM-DD (опционально)
+- `assigned_to:` - telegram_id сотрудника (опционально)
+
+# How It Works
+
+1. **Запуск**: `python bot.py` запускает бота в режиме polling
+2. **Polling**: Бот каждые ~0.5 секунд опрашивает Telegram API
+3. **Получение команды**: Telegram API возвращает новые сообщения
+4. **Обработка**: Aiogram вызывает соответствующий handler
+5. **База данных**: Handler работает с PostgreSQL через psycopg2
+6. **Ответ**: Бот отправляет ответ через Telegram Bot API
+
+# Running the Bot
+
+## Локальный запуск
+
+```bash
+python bot.py
+```
+
+Или в фоне:
+
+```bash
+nohup python bot.py > /tmp/telegram_bot.log 2>&1 &
+```
+
+## Проверка статуса
+
+```bash
+# Проверить процесс
+ps aux | grep "python bot.py"
+
+# Посмотреть логи
+tail -f /tmp/telegram_bot.log
+```
+
+## Остановка
+
+```bash
+pkill -f "python bot.py"
+```
+
+# Getting Admin Role
+
+По умолчанию все новые пользователи регистрируются как **employee**.
+
+Для получения роли администратора:
+
+```sql
+UPDATE users SET role = 'admin' WHERE telegram_id = 'ваш_telegram_id';
+```
+
+Узнать свой Telegram ID:
+1. Отправьте `/start` боту
+2. Откройте Database pane в Replit
+3. Выполните: `SELECT * FROM users ORDER BY created_at DESC LIMIT 5;`
+
+# Troubleshooting
+
+## Бот не отвечает
+
+1. Проверьте процесс: `ps aux | grep python`
+2. Проверьте логи: `tail -f /tmp/telegram_bot.log`
+3. Проверьте токен: `echo $TELEGRAM_BOT_TOKEN`
+4. Перезапустите: `pkill -f python && python bot.py &`
+
+## Ошибка Token is invalid
+
+Токен должен быть из @BotFather без пробелов и переносов строк.
+
+## База данных не работает
+
+Проверьте подключение:
+```bash
+psql $DATABASE_URL -c "SELECT COUNT(*) FROM users;"
+```
+
+# Future Improvements
+
+- [ ] Inline-кнопки для быстрых действий
+- [ ] Напоминания о дедлайнах
+- [ ] Статистика по задачам
+- [ ] Экспорт отчётов
+- [ ] Фильтрация задач
+- [ ] Поиск по ключевым словам
