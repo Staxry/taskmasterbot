@@ -10,10 +10,10 @@ import pytz
 load_dotenv()
 
 # Telegram Bot Token
-BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+_bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
 
 # Валидация токена
-if not BOT_TOKEN:
+if not _bot_token:
     print("\n" + "="*60)
     print("❌ ОШИБКА: Токен бота не найден!")
     print("="*60)
@@ -33,8 +33,12 @@ if not BOT_TOKEN:
     print("   - Токен без кавычек и пробелов")
     print("   - После = сразу токен, без пробелов")
     print("\n4️⃣  Получить токен можно у @BotFather в Telegram")
+    print("\n🔍  Для диагностики запустите: python test_env.py")
     print("="*60 + "\n")
     sys.exit(1)
+
+# Гарантированно str после проверки
+BOT_TOKEN: str = _bot_token
 
 # Timezone Configuration
 # Установите нужный часовой пояс для вашего региона
