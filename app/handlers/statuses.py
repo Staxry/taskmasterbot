@@ -83,11 +83,19 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
                     "Например: 'Выполнено 70%. Осталось проверить данные и оформить выводы.'"
                 )
             
-            await callback.message.edit_text(
-                prompt_text,
-                parse_mode='HTML',
-                reply_markup=cancel_keyboard
-            )
+            try:
+                await callback.message.edit_text(
+                    prompt_text,
+                    parse_mode='HTML',
+                    reply_markup=cancel_keyboard
+                )
+            except Exception:
+                await callback.message.delete()
+                await callback.message.answer(
+                    prompt_text,
+                    parse_mode='HTML',
+                    reply_markup=cancel_keyboard
+                )
             await callback.answer()
             return
         
@@ -154,11 +162,19 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
             if status not in ['completed', 'partially_completed']:
                 text += "\nВыберите новый статус:"
             
-            await callback.message.edit_text(
-                text,
-                parse_mode='HTML',
-                reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
-            )
+            try:
+                await callback.message.edit_text(
+                    text,
+                    parse_mode='HTML',
+                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
+                )
+            except Exception:
+                await callback.message.delete()
+                await callback.message.answer(
+                    text,
+                    parse_mode='HTML',
+                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
+                )
     
     except Exception as e:
         logger.error(f"❌ Error updating status for task #{task_id}: {e}", exc_info=True)
