@@ -1,6 +1,6 @@
 # Overview
 
-This project is a full-featured asynchronous Telegram bot designed for task management. Built with Python and the `aiogram` library, it operates via commands using polling, ensuring free operation without AI costs. The system offers a robust, production-ready implementation with a modular architecture, role-based access for task management (admin/employee), and utilizes PostgreSQL for data storage. Its core capabilities include interactive inline buttons for all commands, a whitelist authorization system, FSM for task and user management, error handling, and the ability for admins to attach photos to tasks which are then included in notifications. The project aims to provide an efficient and cost-effective solution for team task coordination.
+This project is a full-featured asynchronous Telegram bot designed for task management. Built with Python and the `aiogram` library, it operates via commands using polling, ensuring free operation without AI costs. The system offers a robust, production-ready implementation with a modular architecture, role-based access for task management (admin/employee), and utilizes PostgreSQL for data storage. Its core capabilities include interactive inline buttons for all commands, a whitelist authorization system, FSM for task and user management, error handling, task photos, automated deadline notifications (24h/3h reminders and overdue alerts), advanced statistics with Excel export, pagination, and search. The project aims to provide an efficient and cost-effective solution for team task coordination with proactive deadline management.
 
 # User Preferences
 
@@ -15,32 +15,49 @@ The application is developed with **Python 3.11 and aiogram 3.22**, leveraging `
 ## Modular Structure (v2.0)
 
 The codebase is organized for clarity and maintainability:
-- `app/main.py`: Bot initialization and router registration.
+- `app/main.py`: Bot initialization, router registration, and notification scheduler integration.
 - `app/config.py`: Centralized configuration constants.
 - `app/logging_config.py`: Centralized logging setup.
 - `app/database.py`: PostgreSQL connection and schema management.
 - `app/states.py`: FSM state definitions.
 - `app/keyboards/`: Reusable inline keyboard factories.
-- `app/services/`: Business logic for users and tasks.
+- `app/services/`: Business logic for users, tasks, notifications, and statistics.
 - `app/handlers/`: Event handlers organized by domain (core, statuses, photos).
 - `bot.py`: Entry point.
 - `START_BOT.sh`: Interactive management script for deployment.
+- `requirements_deploy.txt`: Complete production dependencies for server deployment.
 
 ## Database Layer
 
 **PostgreSQL with psycopg2** manages data, featuring:
-- A schema with `users`, `tasks`, and `allowed_users` tables.
+- A schema with `users`, `tasks`, `allowed_users`, and `task_notifications` tables.
 - Enum types for roles, priorities, and statuses.
 - Foreign key relationships between users and tasks.
 - Automatic schema initialization on startup.
 - Key entities:
     - **Users**: Telegram ID, username, role, timestamps.
-    - **Tasks**: Title, description, priority, status, due date, assignment, photo file IDs, completion comment.
+    - **Tasks**: Title, description, priority, status, due date (TIMESTAMP), assignment, photo file IDs, completion comment.
     - **Allowed Users**: Whitelist for authorization by username and role.
+    - **Task Notifications**: Tracking sent notifications (task_id, notification_type, sent_at) to prevent duplicates.
 
 ## Bot Architecture
 
 Utilizes the **Aiogram 3 Router Pattern** with `core_router`, `statuses_router`, and `photos_router` registered in `app.main`. Handlers are asynchronous and use decorators. Access rights are validated via the service layer. Each command handler retrieves/creates a user, checks access, performs database operations, and sends a Telegram API response.
+
+## Automated Notification System
+
+A **background notification scheduler** runs alongside the bot, providing proactive deadline management:
+- **Implementation**: Asynchronous task created with `asyncio.create_task()`, properly cancelled during shutdown
+- **Check Frequency**: Every 30 minutes
+- **Notification Types**:
+  - **24-hour reminder**: Sent to task assignee 24 hours before deadline
+  - **3-hour reminder**: Sent to task assignee 3 hours before deadline  
+  - **Overdue alert**: Sent to all admins for tasks past deadline
+- **Smart Tracking**: Uses `task_notifications` table to prevent duplicate notifications
+- **NULL-safe**: Handles tasks with missing descriptions gracefully
+- **Priority-aware**: Includes priority emoji indicators in notifications
+- **Quick Actions**: All notifications include "Open Task" button for direct access
+- **Logging**: Comprehensive logging with emoji indicators for monitoring
 
 ## Logging System
 
@@ -72,12 +89,17 @@ The system uses **Polling** for its simplicity, no HTTPS requirement, and ease o
 - **Interactive Inline Buttons**: Primary mode of user interaction.
 - **Role-Based Access**: Distinguishes admin and employee functionalities.
 - **Task Photo Integration**: Enhances task clarity.
-- **"Open Task" Button**: Quick navigation from notifications.
+- **"Open Task" Button**: Quick navigation from notifications and reminders.
 - **Comprehensive Logging**: Uses emoji indicators for clear monitoring.
 - **Pagination**: Implemented for task lists (10 tasks per page) with navigation and page counters.
 - **Task Search**: Allows searching tasks by title and description, accessible to all users with appropriate rights.
 - **Admin Dashboard**: Provides real-time statistics (total, active, completed, overdue tasks, status/priority distribution, top performers) with a refresh option.
-- **Excel Reports**: Admins can generate Excel reports with tables and charts (status distribution, active tasks by priority, top performers).
+- **Excel Reports**: Admins can generate detailed Excel reports with 4 sheets:
+  - **Statistics**: Overview with key metrics
+  - **Charts**: Visual distribution of status, priority, and performance
+  - **Completed Tasks**: Detailed list with timestamps and assignees
+  - **Overdue Tasks**: Detailed list with days overdue (7+ days highlighted in red)
+- **Automated Reminders**: Proactive 24h/3h deadline notifications and overdue alerts to keep tasks on track.
 
 # External Dependencies
 
