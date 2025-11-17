@@ -566,7 +566,17 @@ async def callback_task_details(callback: CallbackQuery):
             await callback.answer("❌ Задача не найдена.", show_alert=True)
             return
         
-        tid, title, description, status, priority, due_date, assigned_username, created_at, assigned_to_id, completion_comment, photo_file_id = task
+        tid = task['id']
+        title = task['title']
+        description = task['description']
+        status = task['status']
+        priority = task['priority']
+        due_date = task['due_date']
+        assigned_username = task.get('username')
+        created_at = task['created_at']
+        assigned_to_id = task['assigned_to_id']
+        completion_comment = task.get('completion_comment')
+        photo_file_id = task.get('photo_file_id')
         
         logger.debug(f"📊 Task #{tid}: status={status}, assigned_to={assigned_username}, has_photo={bool(photo_file_id)}")
         

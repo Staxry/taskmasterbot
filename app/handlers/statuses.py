@@ -52,7 +52,7 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
             await callback.answer("❌ Задача не найдена.", show_alert=True)
             return
         
-        if task[0] != user['id'] and user['role'] != 'admin':
+        if task['assigned_to_id'] != user['id'] and user['role'] != 'admin':
             logger.warning(f"⛔ User {username} tried to update task #{task_id} without permissions")
             await callback.answer("❌ Вы можете обновлять только свои задачи.", show_alert=True)
             return
@@ -128,7 +128,17 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
         updated_task = cur.fetchone()
         
         if updated_task:
-            tid, title, description, status, priority, due_date, assigned_username, created_at, assigned_to_id, completion_comment, photo_file_id = updated_task
+            tid = updated_task['id']
+            title = updated_task['title']
+            description = updated_task['description']
+            status = updated_task['status']
+            priority = updated_task['priority']
+            due_date = updated_task['due_date']
+            assigned_username = updated_task.get('username')
+            created_at = updated_task['created_at']
+            assigned_to_id = updated_task['assigned_to_id']
+            completion_comment = updated_task.get('completion_comment')
+            photo_file_id = updated_task.get('photo_file_id')
             
             status_display = {
                 'pending': '⏳ Ожидает',
@@ -153,7 +163,7 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
 <b>Приоритет:</b> {priority_display}
 <b>Срок:</b> {due_date}
 <b>Назначена:</b> @{assigned_username or 'Не назначена'}
-<b>Создана:</b> {created_at.strftime('%Y-%m-%d %H:%M')}
+<b>Создана:</b> {created_at}
 """
             
             if status in ['completed', 'partially_completed'] and completion_comment:
@@ -220,7 +230,7 @@ async def callback_reopen_task(callback: CallbackQuery):
             await callback.answer("❌ Задача не найдена.", show_alert=True)
             return
         
-        current_status = task[0]
+        current_status = task['status']
         
         if current_status not in ['completed', 'partially_completed']:
             logger.warning(f"⚠️ Task #{task_id} is not completed (status: {current_status})")
@@ -255,7 +265,15 @@ async def callback_reopen_task(callback: CallbackQuery):
         updated_task = cur.fetchone()
         
         if updated_task:
-            tid, title, description, status, priority, due_date, assigned_username, created_at, assigned_to_id = updated_task
+            tid = updated_task['id']
+            title = updated_task['title']
+            description = updated_task['description']
+            status = updated_task['status']
+            priority = updated_task['priority']
+            due_date = updated_task['due_date']
+            assigned_username = updated_task.get('username')
+            created_at = updated_task['created_at']
+            assigned_to_id = updated_task['assigned_to_id']
             
             status_text = {
                 'pending': '⏳ Ожидает',
@@ -280,7 +298,7 @@ async def callback_reopen_task(callback: CallbackQuery):
 <b>Приоритет:</b> {priority_text}
 <b>Срок:</b> {due_date}
 <b>Назначена:</b> @{assigned_username or '🆓 Свободна (можно взять)'}
-<b>Создана:</b> {created_at.strftime('%Y-%m-%d %H:%M')}
+<b>Создана:</b> {created_at}
 
 Выберите новый статус:"""
             
