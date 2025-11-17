@@ -26,6 +26,7 @@ def get_main_keyboard(role: str) -> InlineKeyboardMarkup:
     
     if role == 'admin':
         buttons.append([InlineKeyboardButton(text="📊 Все задачи", callback_data="all_tasks")])
+        buttons.append([InlineKeyboardButton(text="📈 Статистика и отчёты", callback_data="dashboard")])
         buttons.append([InlineKeyboardButton(text="➕ Создать задачу", callback_data="create_task")])
         buttons.append([InlineKeyboardButton(text="🗑️ Удалить задачу", callback_data="delete_task_menu")])
         buttons.append([

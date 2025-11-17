@@ -1318,6 +1318,145 @@ async def callback_confirm_remove_user(callback: CallbackQuery):
         conn.close()
 
 
+@core_router.callback_query(F.data == "dashboard")
+async def callback_dashboard(callback: CallbackQuery):
+    """Показать дашборд со статистикой"""
+    from app.services.statistics import get_dashboard_statistics
+    
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username
+    first_name = callback.from_user.first_name or ''
+    
+    logger.info(f"📈 Dashboard requested by {username}")
+    
+    user = get_or_create_user(telegram_id, username, first_name)
+    if not user or user['role'] != 'admin':
+        await callback.answer("❌ Только администраторы могут просматривать статистику", show_alert=True)
+        return
+    
+    stats = get_dashboard_statistics(user['role'])
+    
+    if not stats:
+        await callback.answer("❌ Не удалось получить статистику", show_alert=True)
+        return
+    
+    # Форматирование текста статистики
+    text = "📈 <b>Дашборд статистики</b>\n\n"
+    
+    text += "📊 <b>Общая информация:</b>\n"
+    text += f"▫️ Всего задач: <b>{stats['total_tasks']}</b>\n"
+    text += f"▫️ Активных: <b>{stats['active_tasks']}</b>\n"
+    text += f"▫️ Завершённых: <b>{stats['by_status']['completed']}</b>\n"
+    text += f"▫️ Просрочено: <b>{stats['overdue_tasks']}</b> ⚠️\n\n"
+    
+    text += "📋 <b>По статусам:</b>\n"
+    text += f"⏳ Ожидает: {stats['by_status']['pending']}\n"
+    text += f"🔄 В работе: {stats['by_status']['in_progress']}\n"
+    text += f"🔶 Частично: {stats['by_status']['partially_completed']}\n"
+    text += f"✅ Завершено: {stats['by_status']['completed']}\n"
+    text += f"❌ Отклонено: {stats['by_status']['rejected']}\n\n"
+    
+    if stats.get('by_priority'):
+        text += "🎯 <b>По приоритетам (активные):</b>\n"
+        priority_emoji = {'urgent': '🔴', 'high': '🟠', 'medium': '🟡', 'low': '🟢'}
+        for priority, count in stats['by_priority'].items():
+            emoji = priority_emoji.get(priority, '📌')
+            text += f"{emoji} {priority.capitalize()}: {count}\n"
+        text += "\n"
+    
+    text += f"📅 Создано сегодня: {stats['today_created']}\n"
+    text += f"✅ Завершено за неделю: {stats['completed_last_week']}\n\n"
+    
+    if stats.get('top_performers'):
+        text += "🏆 <b>Топ исполнителей:</b>\n"
+        for i, (username_perf, count) in enumerate(stats['top_performers'][:3], 1):
+            medals = {1: '🥇', 2: '🥈', 3: '🥉'}
+            medal = medals.get(i, '🏅')
+            text += f"{medal} {username_perf}: {count} задач\n"
+    
+    # Кнопки для экспорта
+    buttons = [
+        [InlineKeyboardButton(text="📊 Полный отчёт Excel", callback_data="export_full")],
+        [InlineKeyboardButton(text="📈 Отчёт по статусам", callback_data="export_status")],
+        [InlineKeyboardButton(text="👥 Отчёт по исполнителям", callback_data="export_users")],
+        [InlineKeyboardButton(text="🔄 Обновить данные", callback_data="dashboard")],
+        [InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")]
+    ]
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    
+    try:
+        await callback.message.edit_text(
+            text,
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+    except Exception:
+        await callback.message.delete()
+        await callback.message.answer(
+            text,
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+    
+    await callback.answer()
+
+
+@core_router.callback_query(F.data.startswith("export_"))
+async def callback_export_report(callback: CallbackQuery):
+    """Генерация и отправка Excel отчёта"""
+    from app.services.statistics import generate_excel_report
+    from aiogram.types import BufferedInputFile
+    
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username
+    first_name = callback.from_user.first_name or ''
+    
+    report_type = callback.data.split('_')[1]  # full, status, users
+    
+    logger.info(f"📊 Excel export requested by {username}: {report_type}")
+    
+    user = get_or_create_user(telegram_id, username, first_name)
+    if not user or user['role'] != 'admin':
+        await callback.answer("❌ Только администраторы могут экспортировать отчёты", show_alert=True)
+        return
+    
+    await callback.answer("📊 Генерирую отчёт... Пожалуйста, подождите.", show_alert=False)
+    
+    try:
+        # Генерация отчёта
+        logger.info(f"🔄 Starting report generation: {report_type}")
+        excel_file = generate_excel_report(report_type)
+        
+        # Определение имени файла
+        report_names = {
+            'full': 'Полный_отчёт',
+            'status': 'Отчёт_по_статусам',
+            'users': 'Отчёт_по_исполнителям'
+        }
+        filename = f"{report_names.get(report_type, 'Отчёт')}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+        
+        # Отправка файла
+        document = BufferedInputFile(excel_file.read(), filename=filename)
+        
+        await callback.message.answer_document(
+            document=document,
+            caption=f"📊 <b>Excel отчёт готов!</b>\n\n"
+                    f"Тип: {report_names.get(report_type, 'Отчёт')}\n"
+                    f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+            parse_mode='HTML'
+        )
+        
+        logger.info(f"✅ Excel report sent successfully to {username}")
+        
+    except Exception as e:
+        logger.error(f"❌ Error generating/sending Excel report: {e}", exc_info=True)
+        await callback.message.answer(
+            "❌ Произошла ошибка при генерации отчёта. Попробуйте позже.",
+            reply_markup=get_main_keyboard(user['role'])
+        )
+
+
 @core_router.callback_query(F.data == "search_tasks")
 async def callback_search_tasks(callback: CallbackQuery, state: FSMContext):
     """Начать поиск задач"""

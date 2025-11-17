@@ -1,0 +1,273 @@
+"""
+Statistics and Excel report generation service
+"""
+import io
+from datetime import datetime, timedelta
+from typing import Dict, Any
+import matplotlib
+matplotlib.use('Agg')  # Non-GUI backend
+import matplotlib.pyplot as plt
+from openpyxl import Workbook
+from openpyxl.drawing.image import Image as XLImage
+from openpyxl.chart import BarChart, PieChart, Reference
+from openpyxl.styles import Font, Alignment, PatternFill
+
+from app.database import get_db_connection
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
+
+
+def get_dashboard_statistics(user_role: str = 'admin') -> Dict[str, Any]:
+    """
+    Получить статистику для дашборда
+    
+    Args:
+        user_role: Роль пользователя ('admin' или 'employee')
+    
+    Returns:
+        Dict с метриками статистики
+    """
+    logger.info(f"📊 Generating dashboard statistics for role: {user_role}")
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        stats = {}
+        
+        # Общее количество задач
+        cur.execute("SELECT COUNT(*) FROM tasks")
+        stats['total_tasks'] = cur.fetchone()[0]
+        
+        # Задачи по статусам
+        cur.execute("""
+            SELECT status, COUNT(*) 
+            FROM tasks 
+            GROUP BY status
+        """)
+        status_counts = dict(cur.fetchall())
+        stats['by_status'] = {
+            'pending': status_counts.get('pending', 0),
+            'in_progress': status_counts.get('in_progress', 0),
+            'partially_completed': status_counts.get('partially_completed', 0),
+            'completed': status_counts.get('completed', 0),
+            'rejected': status_counts.get('rejected', 0)
+        }
+        
+        # Активные задачи (не завершённые)
+        stats['active_tasks'] = (
+            stats['by_status']['pending'] + 
+            stats['by_status']['in_progress'] + 
+            stats['by_status']['partially_completed']
+        )
+        
+        # Задачи по приоритетам
+        cur.execute("""
+            SELECT priority, COUNT(*) 
+            FROM tasks 
+            WHERE status NOT IN ('completed', 'rejected')
+            GROUP BY priority
+        """)
+        stats['by_priority'] = dict(cur.fetchall())
+        
+        # Просроченные задачи
+        cur.execute("""
+            SELECT COUNT(*) 
+            FROM tasks 
+            WHERE due_date < NOW() 
+            AND status NOT IN ('completed', 'rejected')
+        """)
+        stats['overdue_tasks'] = cur.fetchone()[0]
+        
+        # Задачи за сегодня (созданные)
+        cur.execute("""
+            SELECT COUNT(*) 
+            FROM tasks 
+            WHERE DATE(created_at) = CURRENT_DATE
+        """)
+        stats['today_created'] = cur.fetchone()[0]
+        
+        # Завершённые за последние 7 дней
+        cur.execute("""
+            SELECT COUNT(*) 
+            FROM tasks 
+            WHERE status = 'completed'
+            AND updated_at >= NOW() - INTERVAL '7 days'
+        """)
+        stats['completed_last_week'] = cur.fetchone()[0]
+        
+        # Топ исполнителей
+        cur.execute("""
+            SELECT u.username, COUNT(t.id) as task_count
+            FROM tasks t
+            JOIN users u ON t.assigned_to_id = u.id
+            WHERE t.status = 'completed'
+            GROUP BY u.username
+            ORDER BY task_count DESC
+            LIMIT 5
+        """)
+        stats['top_performers'] = cur.fetchall()
+        
+        logger.info(f"✅ Dashboard statistics generated: {stats['total_tasks']} total tasks")
+        return stats
+        
+    except Exception as e:
+        logger.error(f"❌ Error generating dashboard statistics: {e}", exc_info=True)
+        return {}
+    finally:
+        cur.close()
+        conn.close()
+
+
+def generate_excel_report(report_type: str = 'full') -> io.BytesIO:
+    """
+    Генерация Excel отчёта с графиками
+    
+    Args:
+        report_type: Тип отчёта ('full', 'status', 'priority', 'users')
+    
+    Returns:
+        BytesIO объект с Excel файлом
+    """
+    logger.info(f"📊 Generating Excel report: {report_type}")
+    
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Статистика задач"
+    
+    # Заголовок
+    ws['A1'] = "Отчёт по задачам"
+    ws['A1'].font = Font(size=16, bold=True)
+    ws['A2'] = f"Дата создания: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+    ws['A2'].font = Font(size=10, italic=True)
+    
+    stats = get_dashboard_statistics()
+    
+    if not stats:
+        logger.warning("⚠️ No statistics data available")
+        ws['A4'] = "Нет данных для отчёта"
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        return output
+    
+    # Общая статистика
+    ws['A4'] = "Общая статистика"
+    ws['A4'].font = Font(size=14, bold=True)
+    ws['A4'].fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    ws['A4'].font = Font(size=14, bold=True, color="FFFFFF")
+    
+    row = 5
+    ws[f'A{row}'] = "Всего задач:"
+    ws[f'B{row}'] = stats['total_tasks']
+    ws[f'B{row}'].font = Font(bold=True)
+    
+    row += 1
+    ws[f'A{row}'] = "Активных задач:"
+    ws[f'B{row}'] = stats['active_tasks']
+    
+    row += 1
+    ws[f'A{row}'] = "Завершено:"
+    ws[f'B{row}'] = stats['by_status']['completed']
+    
+    row += 1
+    ws[f'A{row}'] = "Просрочено:"
+    ws[f'B{row}'] = stats['overdue_tasks']
+    ws[f'B{row}'].font = Font(color="FF0000", bold=True)
+    
+    # Статистика по статусам
+    row += 2
+    ws[f'A{row}'] = "Задачи по статусам"
+    ws[f'A{row}'].font = Font(size=12, bold=True)
+    ws[f'A{row}'].fill = PatternFill(start_color="70AD47", end_color="70AD47", fill_type="solid")
+    ws[f'A{row}'].font = Font(size=12, bold=True, color="FFFFFF")
+    
+    row += 1
+    status_labels = {
+        'pending': 'Ожидает',
+        'in_progress': 'В работе',
+        'partially_completed': 'Частично завершена',
+        'completed': 'Завершена',
+        'rejected': 'Отклонена'
+    }
+    
+    for status_key, label in status_labels.items():
+        ws[f'A{row}'] = label
+        ws[f'B{row}'] = stats['by_status'][status_key]
+        row += 1
+    
+    # Топ исполнителей
+    if stats.get('top_performers'):
+        row += 1
+        ws[f'A{row}'] = "Топ исполнителей"
+        ws[f'A{row}'].font = Font(size=12, bold=True)
+        ws[f'A{row}'].fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
+        ws[f'A{row}'].font = Font(size=12, bold=True, color="000000")
+        
+        row += 1
+        ws[f'A{row}'] = "Исполнитель"
+        ws[f'B{row}'] = "Завершено задач"
+        ws[f'A{row}'].font = Font(bold=True)
+        ws[f'B{row}'].font = Font(bold=True)
+        
+        row += 1
+        for username, count in stats['top_performers']:
+            ws[f'A{row}'] = username
+            ws[f'B{row}'] = count
+            row += 1
+    
+    # Автоматическая ширина столбцов
+    ws.column_dimensions['A'].width = 30
+    ws.column_dimensions['B'].width = 15
+    
+    # Создание графиков с matplotlib
+    try:
+        # График по статусам
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+        
+        # Круговая диаграмма по статусам
+        status_data = [v for v in stats['by_status'].values() if v > 0]
+        status_labels_filtered = [status_labels[k] for k, v in stats['by_status'].items() if v > 0]
+        colors = ['#FFA500', '#4169E1', '#FFD700', '#32CD32', '#FF6347']
+        
+        ax1.pie(status_data, labels=status_labels_filtered, autopct='%1.1f%%', colors=colors)
+        ax1.set_title('Распределение задач по статусам', fontsize=14, fontweight='bold')
+        
+        # Столбчатая диаграмма приоритетов
+        priority_labels = list(stats['by_priority'].keys())
+        priority_values = list(stats['by_priority'].values())
+        
+        if priority_labels and priority_values:
+            ax2.bar(priority_labels, priority_values, color=['#FF4444', '#FF8800', '#FFDD44', '#88DD44'])
+            ax2.set_title('Задачи по приоритетам (активные)', fontsize=14, fontweight='bold')
+            ax2.set_xlabel('Приоритет')
+            ax2.set_ylabel('Количество задач')
+        else:
+            ax2.text(0.5, 0.5, 'Нет данных', ha='center', va='center', fontsize=14)
+        
+        plt.tight_layout()
+        
+        # Сохранение графика в BytesIO
+        img_stream = io.BytesIO()
+        plt.savefig(img_stream, format='png', dpi=100, bbox_inches='tight')
+        img_stream.seek(0)
+        plt.close(fig)
+        
+        # Вставка изображения в Excel (на новый лист)
+        ws_charts = wb.create_sheet(title="Графики")
+        img = XLImage(img_stream)
+        ws_charts.add_image(img, 'A1')
+        
+        logger.info("✅ Excel charts generated successfully")
+        
+    except Exception as e:
+        logger.error(f"❌ Error generating charts: {e}", exc_info=True)
+    
+    # Сохранение в BytesIO
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    logger.info(f"✅ Excel report generated successfully: {output.getbuffer().nbytes} bytes")
+    return output

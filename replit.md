@@ -1,27 +1,6 @@
 # Overview
 
-This is a full-featured asynchronous Telegram bot for task management, built with Python and the `aiogram` library. The bot operates via commands (without AI) and uses polling instead of webhooks, making it completely free to run.
-
-The system demonstrates a production-ready implementation with:
-- An asynchronous bot on `aiogram 3.22` using polling.
-- **Modular architecture v2.0** with separation of concerns.
-- A task management system with role-based access (admin/employee).
-- PostgreSQL database for storing users and tasks.
-- Commands in Russian.
-- Free operation without AI costs.
-- **Centralized logging** to file and console with rotation.
-
-Key capabilities include:
-- Interactive inline buttons for all commands.
-- Whitelist authorization system by username.
-- Access rights validation (admin vs. employee).
-- FSM for task creation and user management.
-- Error handling and data validation.
-- Ability for admins to attach photos to tasks.
-- Photos included in notifications when available.
-- "Open Task" button in all notifications for quick access.
-- User lists displayed when removing admins/employees.
-- **Interactive management script** for Ubuntu deployment.
+This project is a full-featured asynchronous Telegram bot designed for task management. Built with Python and the `aiogram` library, it operates via commands using polling, ensuring free operation without AI costs. The system offers a robust, production-ready implementation with a modular architecture, role-based access for task management (admin/employee), and utilizes PostgreSQL for data storage. Its core capabilities include interactive inline buttons for all commands, a whitelist authorization system, FSM for task and user management, error handling, and the ability for admins to attach photos to tasks which are then included in notifications. The project aims to provide an efficient and cost-effective solution for team task coordination.
 
 # User Preferences
 
@@ -31,229 +10,89 @@ Preferred communication style: Simple, everyday language (Russian).
 
 ## Core Framework
 
-The application is built on **Python 3.11 + aiogram 3.22**, utilizing:
-- Asynchronous command processing via `asyncio`.
-- Polling mode for continuous querying of the Telegram API.
-- `MemoryStorage` for the Finite State Machine (FSM).
-- Automatic handling of updates from Telegram.
-- **Modular Router-based architecture** (aiogram 3.x best practices).
+The application is developed with **Python 3.11 and aiogram 3.22**, leveraging `asyncio` for asynchronous command processing and operating in polling mode for continuous Telegram API interaction. It uses `MemoryStorage` for the Finite State Machine (FSM) and adheres to `aiogram 3.x` best practices with a modular, router-based architecture.
 
 ## Modular Structure (v2.0)
 
-The codebase is organized into clean, testable modules:
-
-```
-app/
-├── __init__.py                 # Package initialization
-├── main.py                     # Bot initialization & router registration
-├── config.py                   # Configuration constants
-├── logging_config.py           # Centralized logging setup
-├── database.py                 # PostgreSQL connection & schema init
-├── states.py                   # FSM state definitions
-├── keyboards/                  # Inline keyboard builders
-│   ├── main_menu.py
-│   ├── task_keyboards.py
-│   └── user_keyboards.py
-├── services/                   # Business logic layer
-│   ├── users.py              # User authorization & management
-│   └── tasks.py              # Task operations (future)
-└── handlers/                   # Event handlers (routers)
-    ├── __init__.py           # Router definitions
-    ├── core.py               # Core commands & menus
-    ├── statuses.py           # Task status updates
-    └── photos.py             # Photo attachment handling
-
-bot.py                          # Entry point
-START_BOT.sh                    # Interactive management menu
-logs/                           # Rotating log files
-```
-
-### Module Responsibilities
-
-**app/main.py**: Bot & dispatcher initialization, router registration, startup/shutdown hooks.
-
-**app/config.py**: All configuration constants (BOT_TOKEN, DATABASE_URL, status/priority mappings).
-
-**app/logging_config.py**: Rotating file handler + console output, structured logging format.
-
-**app/database.py**: Connection pool management, schema initialization (CREATE TABLE IF NOT EXISTS).
-
-**app/keyboards/**: Reusable inline keyboard factories, isolated from handler logic.
-
-**app/services/**: Business logic and database operations, used by handlers.
-
-**app/handlers/**: Command & callback handlers organized by domain:
-- `core.py`: /start, help, task lists, task creation, deletion, user management
-- `statuses.py`: Task status transitions, completion flow, reopening tasks
-- `photos.py`: Photo uploads for task creation and completion
+The codebase is organized for clarity and maintainability:
+- `app/main.py`: Bot initialization and router registration.
+- `app/config.py`: Centralized configuration constants.
+- `app/logging_config.py`: Centralized logging setup.
+- `app/database.py`: PostgreSQL connection and schema management.
+- `app/states.py`: FSM state definitions.
+- `app/keyboards/`: Reusable inline keyboard factories.
+- `app/services/`: Business logic for users and tasks.
+- `app/handlers/`: Event handlers organized by domain (core, statuses, photos).
+- `bot.py`: Entry point.
+- `START_BOT.sh`: Interactive management script for deployment.
 
 ## Database Layer
 
-**PostgreSQL with psycopg2** is used for data management:
-- **Schema Design**: Three main tables (`users`, `tasks`, `allowed_users`) with enum types for roles, priorities, and statuses.
-- **Relations**: Foreign key relationships between `users` and `tasks` (assigned_to_id, created_by_id).
-- **Connection**: Synchronous `psycopg2` driver connecting via `DATABASE_URL`.
-- **Initialization**: Automatic schema creation via `app.database.init_database()`.
-- **Key Entities**:
-    - **Users**: Telegram ID (unique), username, role (admin/employee), timestamps.
-    - **Tasks**: Title, description, priority, status, due date, assignment tracking, `task_photo_file_id`, `photo_file_id` (for completion), `completion_comment`.
-    - **Allowed Users**: Username (unique), role, `added_by_id`, `created_at` (whitelist for authorization).
+**PostgreSQL with psycopg2** manages data, featuring:
+- A schema with `users`, `tasks`, and `allowed_users` tables.
+- Enum types for roles, priorities, and statuses.
+- Foreign key relationships between users and tasks.
+- Automatic schema initialization on startup.
+- Key entities:
+    - **Users**: Telegram ID, username, role, timestamps.
+    - **Tasks**: Title, description, priority, status, due date, assignment, photo file IDs, completion comment.
+    - **Allowed Users**: Whitelist for authorization by username and role.
 
 ## Bot Architecture
 
-**Aiogram 3 Router Pattern**:
-- Three routers (`core_router`, `statuses_router`, `photos_router`) registered in `app.main`.
-- Handlers use `@router.message` and `@router.callback_query` decorators.
-- No circular dependencies: handlers access bot via `callback.message.bot` or `message.bot`.
-- Command filters for command-specific processing.
-- Asynchronous functions process requests.
-- Access rights validation via `app.services.users.get_or_create_user()`.
-
-**Handler Pattern**: Each command has an asynchronous handler that:
-1. Retrieves or creates a user via service layer.
-2. Checks access rights (whitelist + role).
-3. Performs the database operation.
-4. Sends a response via the Telegram Bot API.
+Utilizes the **Aiogram 3 Router Pattern** with `core_router`, `statuses_router`, and `photos_router` registered in `app.main`. Handlers are asynchronous and use decorators. Access rights are validated via the service layer. Each command handler retrieves/creates a user, checks access, performs database operations, and sends a Telegram API response.
 
 ## Logging System
 
-**Centralized logging** via `app.logging_config`:
-- **File Handler**: Rotating logs in `logs/bot.log` (10MB per file, 5 backups).
-- **Console Handler**: Real-time output for development.
-- **Format**: `YYYY-MM-DD HH:MM:SS - module - level - message`.
-- **Levels**: DEBUG for file, INFO for console.
-- All modules use `get_logger(__name__)` for consistent logging.
+A **centralized logging system** is configured via `app.logging_config`, providing:
+- A rotating file handler (`logs/bot.log`) for detailed logs.
+- A console handler for real-time output.
+- Structured log format including timestamp, module, level, and message.
+- Different logging levels for file (DEBUG) and console (INFO).
 
 ## Deployment & Management
 
-### Environment Variables & Secrets
-
-**In Replit:**
-- Secrets managed via Replit's Secrets tool (encrypted environment variables)
-- Required secrets: `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, `SESSION_SECRET`
-- Automatically synced between Workspace and Deployment
-
-**On External Server (Ubuntu/VPS):**
-- Create `.env` file in project root
-- Never commit `.env` to git (already in `.gitignore`)
-- Example `.env` file:
-  ```
-  TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
-  DATABASE_URL=postgresql://user:password@localhost:5432/dbname
-  SESSION_SECRET=your_random_secret_key
-  ```
-
-**How to get Telegram Bot Token:**
-1. Open [@BotFather](https://t.me/BotFather) in Telegram
-2. Send `/newbot` to create a new bot or `/token` for existing bot
-3. Copy the token (format: `1234567890:ABC...xyz`)
-4. Add to Replit Secrets or `.env` file
-
-**START_BOT.sh** - Interactive menu for bot management:
-- Start/stop/restart bot manually.
-- View logs (last 50 lines).
-- Check bot status.
-- **Ubuntu Server Integration**:
-  - Install as systemd service.
-  - Enable auto-start on boot.
-  - Manage service (start/stop/status).
-  - View systemd logs via journalctl.
-
-See `DEPLOYMENT.md` for complete deployment instructions.
+- **Environment Variables**: Managed via Replit Secrets or a `.env` file for `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, and `SESSION_SECRET`.
+- **`START_BOT.sh`**: An interactive script for starting, stopping, restarting, and checking bot status, with options for systemd service management on Ubuntu servers.
 
 ## Polling vs. Webhook
 
-The current implementation uses **Polling** due to its advantages:
-- Instant launch without needing to publish the Replit application.
-- No HTTPS certificate required.
-- Simpler setup and debugging.
-- The bot continuously queries the Telegram API for new messages.
+The system uses **Polling** for its simplicity, no HTTPS requirement, and ease of debugging and deployment without needing a public application.
 
 ## Design Decisions
 
-- **Why Python + aiogram**: Ease of development, excellent documentation, native asynchronous capabilities, large community.
-- **Why Polling**: Simpler setup, works without deployment, ideal for development and testing.
-- **Why PostgreSQL**: Reliable relational database with transaction support, foreign keys, and complex queries.
-- **Why no AI**: Ensures completely free operation, predictable behavior, and fast command processing.
-- **Why Modular Architecture**: Improved testability, maintainability, separation of concerns, easier debugging.
-- **Why Router Pattern**: Aligns with aiogram 3.x best practices, prevents circular imports, enables modular composition.
+- **Python + aiogram**: Chosen for development ease, async capabilities, and community support.
+- **Polling**: Selected for simplified setup and development.
+- **PostgreSQL**: For reliability, transaction support, and relational features.
+- **No AI**: Ensures free operation and predictable behavior.
+- **Modular Architecture & Router Pattern**: For improved maintainability, testability, and adherence to best practices.
 
 ## UI/UX Decisions
 
-- **Interactive Inline Buttons**: All user interactions are managed through inline buttons within Telegram for a streamlined experience.
-- **Role-Based Access**: Clear distinction between admin and employee functionalities to manage permissions effectively.
-- **Task Photo Integration**: Allows visual context for tasks, improving clarity and communication.
-- **"Open Task" Button**: Provides a quick navigation shortcut from notifications to task details.
-- **Comprehensive Logging**: All operations logged with emoji indicators for easy debugging and monitoring.
+- **Interactive Inline Buttons**: Primary mode of user interaction.
+- **Role-Based Access**: Distinguishes admin and employee functionalities.
+- **Task Photo Integration**: Enhances task clarity.
+- **"Open Task" Button**: Quick navigation from notifications.
+- **Comprehensive Logging**: Uses emoji indicators for clear monitoring.
+- **Pagination**: Implemented for task lists (10 tasks per page) with navigation and page counters.
+- **Task Search**: Allows searching tasks by title and description, accessible to all users with appropriate rights.
+- **Admin Dashboard**: Provides real-time statistics (total, active, completed, overdue tasks, status/priority distribution, top performers) with a refresh option.
+- **Excel Reports**: Admins can generate Excel reports with tables and charts (status distribution, active tasks by priority, top performers).
 
 # External Dependencies
 
-## AI/LLM Services
-- **None**: The bot operates without AI services.
-
 ## Database & Storage
-- **PostgreSQL**: Primary database (connected via `DATABASE_URL`).
-- **psycopg2-binary**: Synchronous PostgreSQL driver (v2.9.11).
+- **PostgreSQL**: Primary database.
+- **psycopg2-binary**: Python adapter for PostgreSQL.
 
 ## Telegram Integration
-- **aiogram**: Asynchronous library for Telegram Bot API (v3.22.0).
-- **aiohttp**: HTTP client for asynchronous requests (v3.12.15).
-- **Telegram Bot API**: Interaction via polling.
+- **aiogram**: Asynchronous framework for Telegram Bot API.
+- **aiohttp**: Asynchronous HTTP client for network requests.
+- **Telegram Bot API**: Core interaction interface.
 
 ## Utilities
-- **python-dotenv**: For loading environment variables (v1.2.1).
-- **typing-extensions**: For extended type support (v4.15.0).
-
-## Required Python Packages
-
-Install with:
-```bash
-pip install aiogram==3.22.0 psycopg2-binary==2.9.11 python-dotenv==1.2.1
-```
-
-Full list of dependencies:
-- aiogram==3.22.0
-- psycopg2-binary==2.9.11
-- python-dotenv==1.2.1
-- requests (optional)
-- flask (optional, not used by bot)
-
-# Recent Changes (2025-11-17)
-
-## Major Refactoring: Modular Architecture v2.0
-
-- **Separated monolithic bot.py (2255 lines) into modular structure**:
-  - Core configuration and logging modules
-  - Keyboard factories separated from handlers
-  - Business logic extracted into services
-  - Handlers split by domain (core/statuses/photos)
-  
-- **Fixed circular dependency**: Removed `from app.main import bot` imports, handlers now use dependency injection pattern.
-
-- **Added comprehensive logging**: All modules log to both file (`logs/bot.log`) and console with rotation.
-
-- **Created interactive management script**: `START_BOT.sh` with menu for Ubuntu server deployment and systemd service management.
-
-- **Improved maintainability**: Each module has clear responsibility, easier to test and extend.
-
-## Bug Fixes & UX Improvements (2025-11-17 Evening)
-
-- **Fixed critical bug**: Added missing FSM state `asking_for_task_photo` in `CreateTaskStates`, resolving AttributeError during task creation.
-  
-- **Fixed database enum**: Added missing `partially_completed` status to PostgreSQL enum type `task_status`.
-
-- **Fixed message editing error**: Added error handling for edit_text operations with fallback to delete+answer pattern when editing messages with photos.
-
-- **Fixed notification logic**: Removed inconsistent check that prevented self-notifications on task completion. Now matches creation behavior where admins receive all notifications including self-assigned tasks.
-
-- **Enhanced UX**: Added "📂 Открыть задачу" button to all admin notifications (task completion with/without photo).
-
-- **Improved navigation**: Added "🔙 Главное меню" button to ALL FSM keyboards:
-  - Task creation flow (title, description, priority, due date, assignee, photo)
-  - Task completion flow (comment, photo upload)
-  - User management flow (add admin, add employee)
-  - All cancel/skip keyboards
-  
-This ensures users can exit to main menu from any point in the workflow without getting stuck.
-
-- **Chat clearing**: When returning to main menu or canceling operations, previous messages are now deleted to keep chat clean and organized. FSM states are properly cleared.
+- **python-dotenv**: For loading environment variables.
+- **typing-extensions**: For extended type hinting support.
+- **openpyxl**: For Excel report generation.
+- **matplotlib**: For creating charts in Excel reports.
+- **Pillow**: For image processing in reports.
