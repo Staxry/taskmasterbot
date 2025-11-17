@@ -136,6 +136,7 @@ def get_main_keyboard(role: str):
     if role == 'admin':
         buttons.append([InlineKeyboardButton(text="📊 Все задачи", callback_data="all_tasks")])
         buttons.append([InlineKeyboardButton(text="➕ Создать задачу", callback_data="create_task")])
+        buttons.append([InlineKeyboardButton(text="🗑️ Удалить задачу", callback_data="delete_task_menu")])
         buttons.append([
             InlineKeyboardButton(text="👨‍💼 Добавить админа", callback_data="add_admin"),
             InlineKeyboardButton(text="👤 Добавить сотрудника", callback_data="add_employee")
@@ -981,6 +982,153 @@ async def process_assignee(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"Error creating task: {e}")
         await callback.answer("❌ Ошибка при создании задачи", show_alert=True)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@dp.callback_query(F.data == "delete_task_menu")
+async def callback_delete_task_menu(callback: CallbackQuery):
+    """Показать список незавершённых задач для удаления"""
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username
+    first_name = callback.from_user.first_name or ''
+    
+    user = get_or_create_user(telegram_id, username, first_name)
+    if not user:
+        await callback.answer("❌ Доступ запрещён", show_alert=True)
+        return
+    
+    if user['role'] != 'admin':
+        await callback.answer("❌ Только администраторы могут удалять задачи.", show_alert=True)
+        return
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Получаем незавершённые задачи
+        cur.execute(
+            """SELECT t.id, t.title, t.status, t.priority, u.username
+               FROM tasks t
+               LEFT JOIN users u ON t.assigned_to_id = u.id
+               WHERE t.status != 'completed'
+               ORDER BY t.created_at DESC
+               LIMIT 20"""
+        )
+        tasks = cur.fetchall()
+        
+        if not tasks:
+            await callback.message.edit_text(
+                "📋 Нет незавершённых задач для удаления.",
+                reply_markup=get_main_keyboard(user['role'])
+            )
+            await callback.answer()
+            return
+        
+        buttons = []
+        
+        status_emoji = {
+            'pending': '⏳',
+            'in_progress': '🔄',
+            'rejected': '❌'
+        }
+        
+        priority_emoji = {
+            'urgent': '🔴',
+            'high': '🟠',
+            'medium': '🟡',
+            'low': '🟢'
+        }
+        
+        for task in tasks:
+            task_id, title, status, priority, assigned_username = task
+            emoji_status = status_emoji.get(status, '📌')
+            emoji_priority = priority_emoji.get(priority, '📌')
+            
+            button_text = f"{emoji_status} {emoji_priority} {title[:25]}"
+            buttons.append([
+                InlineKeyboardButton(
+                    text=button_text,
+                    callback_data=f"delete_confirm_{task_id}"
+                )
+            ])
+        
+        buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        await callback.message.edit_text(
+            f"🗑️ <b>Выберите задачу для удаления:</b>\n\n"
+            f"Показаны незавершённые задачи ({len(tasks)})\n"
+            f"⚠️ Внимание: удаление необратимо!",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+        await callback.answer()
+    
+    finally:
+        cur.close()
+        conn.close()
+
+
+@dp.callback_query(F.data.startswith("delete_confirm_"))
+async def callback_delete_confirm(callback: CallbackQuery):
+    """Удалить задачу после подтверждения"""
+    task_id = int(callback.data.split('_')[2])
+    
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username
+    first_name = callback.from_user.first_name or ''
+    
+    user = get_or_create_user(telegram_id, username, first_name)
+    if not user:
+        await callback.answer("❌ Доступ запрещён", show_alert=True)
+        return
+    
+    if user['role'] != 'admin':
+        await callback.answer("❌ Только администраторы могут удалять задачи.", show_alert=True)
+        return
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Получаем информацию о задаче перед удалением
+        cur.execute(
+            "SELECT title FROM tasks WHERE id = %s",
+            (task_id,)
+        )
+        task = cur.fetchone()
+        
+        if not task:
+            await callback.answer("❌ Задача не найдена.", show_alert=True)
+            return
+        
+        task_title = task[0]
+        
+        # Удаляем задачу
+        cur.execute(
+            "DELETE FROM tasks WHERE id = %s",
+            (task_id,)
+        )
+        conn.commit()
+        
+        await callback.message.edit_text(
+            f"✅ <b>Задача удалена!</b>\n\n"
+            f"ID: {task_id}\n"
+            f"Название: {task_title}\n\n"
+            f"Задача полностью удалена из системы.",
+            parse_mode='HTML',
+            reply_markup=get_main_keyboard(user['role'])
+        )
+        await callback.answer("✅ Задача удалена", show_alert=True)
+        
+        logger.info(f"✅ Task #{task_id} deleted by {username}")
+    
+    except Exception as e:
+        logger.error(f"Error deleting task: {e}")
+        await callback.answer("❌ Ошибка при удалении задачи", show_alert=True)
     finally:
         cur.close()
         conn.close()
