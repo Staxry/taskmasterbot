@@ -33,6 +33,7 @@ class CreateTaskStates(StatesGroup):
     waiting_for_description = State()
     waiting_for_priority = State()
     waiting_for_due_date = State()
+    waiting_for_manual_due_date = State()
     waiting_for_assignee = State()
     asking_for_task_photo = State()
     waiting_for_task_photo = State()
@@ -228,6 +229,7 @@ def get_due_date_keyboard():
             InlineKeyboardButton(text="📅 Через 2 недели", callback_data=f"due_{(today + timedelta(days=14)).strftime('%Y-%m-%d')}"),
             InlineKeyboardButton(text="📅 Через месяц", callback_data=f"due_{(today + timedelta(days=30)).strftime('%Y-%m-%d')}")
         ],
+        [InlineKeyboardButton(text="✍️ Ввод вручную", callback_data="due_manual")],
         [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -256,6 +258,7 @@ def get_users_keyboard():
                 )
             ])
         
+        buttons.append([InlineKeyboardButton(text="📭 Не назначать исполнителя", callback_data="assignee_none")])
         buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
         
         return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -878,10 +881,9 @@ async def callback_take_task(callback: CallbackQuery):
         await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
     
-    # Временно разрешаем админам брать задачи для тестирования
-    # if user['role'] == 'admin':
-    #     await callback.answer("❌ Админы не могут брать задачи в работу. Используйте назначение через создание задачи.", show_alert=True)
-    #     return
+    if user['role'] == 'admin':
+        await callback.answer("❌ Админы не могут брать задачи в работу. Используйте назначение через создание задачи.", show_alert=True)
+        return
     
     conn = get_db_connection()
     cur = conn.cursor()
@@ -1376,6 +1378,18 @@ async def process_due_date(callback: CallbackQuery, state: FSMContext):
     """Обработать выбор срока и перейти к выбору исполнителя"""
     due_date = callback.data.split('_', 1)[1]
     
+    # Если выбран ручной ввод, переходим в состояние ожидания ввода
+    if due_date == "manual":
+        await state.set_state(CreateTaskStates.waiting_for_manual_due_date)
+        await callback.message.edit_text(
+            "✍️ <b>Введите дату вручную</b>\n\n"
+            "Формат: <code>ГГГГ-ММ-ДД</code> (например: 2024-12-31)\n"
+            "Или: <code>ДД.ММ.ГГГГ</code> (например: 31.12.2024)",
+            parse_mode='HTML'
+        )
+        await callback.answer()
+        return
+    
     await state.update_data(due_date=due_date)
     await state.set_state(CreateTaskStates.waiting_for_assignee)
     
@@ -1387,12 +1401,58 @@ async def process_due_date(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@dp.message(CreateTaskStates.waiting_for_manual_due_date)
+async def process_manual_due_date(message: Message, state: FSMContext):
+    """Обработать ручной ввод даты"""
+    date_text = message.text.strip()
+    
+    # Пробуем парсить разные форматы
+    due_date = None
+    try:
+        # Формат ГГГГ-ММ-ДД (например: 2024-12-31)
+        if '-' in date_text:
+            parsed_date = datetime.strptime(date_text, '%Y-%m-%d')
+            due_date = parsed_date.strftime('%Y-%m-%d')
+        # Формат ДД.ММ.ГГГГ (например: 31.12.2024)
+        elif '.' in date_text:
+            parsed_date = datetime.strptime(date_text, '%d.%m.%Y')
+            due_date = parsed_date.strftime('%Y-%m-%d')
+        else:
+            raise ValueError("Неизвестный формат")
+    except ValueError:
+        await message.answer(
+            "❌ <b>Неверный формат даты!</b>\n\n"
+            "Используйте один из форматов:\n"
+            "• <code>ГГГГ-ММ-ДД</code> (например: 2024-12-31)\n"
+            "• <code>ДД.ММ.ГГГГ</code> (например: 31.12.2024)\n\n"
+            "Попробуйте ещё раз:",
+            parse_mode='HTML'
+        )
+        return
+    
+    # Сохраняем дату и переходим к выбору исполнителя
+    await state.update_data(due_date=due_date)
+    await state.set_state(CreateTaskStates.waiting_for_assignee)
+    
+    await message.answer(
+        "👥 <b>Выберите исполнителя задачи:</b>",
+        parse_mode='HTML',
+        reply_markup=get_users_keyboard()
+    )
+
+
 @dp.callback_query(F.data.startswith("assignee_"))
 async def process_assignee(callback: CallbackQuery, state: FSMContext):
     """Выбрать исполнителя и спросить про фото"""
-    assignee_id = int(callback.data.split('_')[1])
+    assignee_str = callback.data.split('_')[1]
     
-    # Сохраняем исполнителя
+    # Если выбрано "не назначать", сохраняем None
+    if assignee_str == "none":
+        assignee_id = None
+    else:
+        assignee_id = int(assignee_str)
+    
+    # Сохраняем исполнителя (или None)
     await state.update_data(assignee_id=assignee_id)
     await state.set_state(CreateTaskStates.asking_for_task_photo)
     
