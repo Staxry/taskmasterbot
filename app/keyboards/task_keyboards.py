@@ -35,10 +35,11 @@ def get_task_keyboard(task_id: int, current_status: str, assigned_to_id: int = N
         logger.debug("✅ Generated 'take task' keyboard for unassigned task")
         return InlineKeyboardMarkup(inline_keyboard=buttons)
     
-    # Если задача завершена или частично завершена - показываем только кнопку "Вернуть в работу" для админов
+    # Если задача завершена или частично завершена - показываем кнопки для админов
     if current_status in ['completed', 'partially_completed']:
         if is_admin:
             buttons.append([InlineKeyboardButton(text="🔄 Вернуть в работу", callback_data=f"reopen_{task_id}")])
+            buttons.append([InlineKeyboardButton(text="👤 Сменить исполнителя", callback_data=f"change_assignee_{task_id}")])
         buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="my_tasks")])
         logger.debug(f"✅ Generated keyboard for completed task (admin: {is_admin})")
         return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -65,6 +66,10 @@ def get_task_keyboard(task_id: int, current_status: str, assigned_to_id: int = N
     # Размещаем кнопки статусов по 2 в ряд
     for i in range(0, len(status_buttons), 2):
         buttons.append(status_buttons[i:i+2])
+    
+    # Для админов добавляем кнопку смены исполнителя
+    if is_admin and assigned_to_id is not None:
+        buttons.append([InlineKeyboardButton(text="👤 Сменить исполнителя", callback_data=f"change_assignee_{task_id}")])
     
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="my_tasks")])
     

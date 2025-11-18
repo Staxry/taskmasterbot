@@ -43,3 +43,13 @@ class RemoveUserStates(StatesGroup):
 class SearchTaskStates(StatesGroup):
     """Состояния для поиска задач"""
     waiting_for_query = State()
+
+
+class ChangeAssigneeStates(StatesGroup):
+    """Состояния для смены исполнителя"""
+    waiting_for_selection = State()
+
+
+class ReopenTaskStates(StatesGroup):
+    """Состояния для возврата задачи с комментарием"""
+    waiting_for_comment = State()
