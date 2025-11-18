@@ -72,7 +72,7 @@ def mark_notification_sent(task_id: int, notification_type: str):
 
 def get_tasks_for_24h_reminder() -> List[Dict[str, Any]]:
     """
-    Получить задачи, до срока которых осталось ~24 часа
+    Получить задачи, до срока которых осталось ~8 часов
     Проверка времени выполняется в Python с учётом timezone
     
     Returns:
@@ -103,7 +103,7 @@ def get_tasks_for_24h_reminder() -> List[Dict[str, Any]]:
         
         all_tasks = cur.fetchall()
         
-        # Фильтруем задачи с дедлайном ~24 часа в Python с учётом timezone
+        # Фильтруем задачи с дедлайном ~8 часов в Python с учётом timezone
         now = get_now()
         reminder_tasks = []
         
@@ -114,14 +114,14 @@ def get_tasks_for_24h_reminder() -> List[Dict[str, Any]]:
                 if due_date.tzinfo is None:
                     due_date = TIMEZONE.localize(due_date)
                 
-                # Проверяем: до дедлайна осталось от 23 до 25 часов
+                # Проверяем: до дедлайна осталось от 7 до 9 часов
                 time_until = due_date - now
                 hours_until = time_until.total_seconds() / 3600
                 
-                if 23 <= hours_until <= 25:
+                if 7 <= hours_until <= 9:
                     reminder_tasks.append(task)
         
-        logger.info(f"📋 Found {len(reminder_tasks)} tasks for 24h reminder (checked {len(all_tasks)} active tasks)")
+        logger.info(f"📋 Found {len(reminder_tasks)} tasks for 8h reminder (checked {len(all_tasks)} active tasks)")
         return reminder_tasks
         
     finally:
@@ -131,7 +131,7 @@ def get_tasks_for_24h_reminder() -> List[Dict[str, Any]]:
 
 def get_tasks_for_3h_reminder() -> List[Dict[str, Any]]:
     """
-    Получить задачи, до срока которых осталось ~3 часа
+    Получить задачи, до срока которых осталось ~4 часа
     Проверка времени выполняется в Python с учётом timezone
     
     Returns:
@@ -162,7 +162,7 @@ def get_tasks_for_3h_reminder() -> List[Dict[str, Any]]:
         
         all_tasks = cur.fetchall()
         
-        # Фильтруем задачи с дедлайном ~3 часа в Python с учётом timezone
+        # Фильтруем задачи с дедлайном ~4 часа в Python с учётом timezone
         now = get_now()
         reminder_tasks = []
         
@@ -173,14 +173,14 @@ def get_tasks_for_3h_reminder() -> List[Dict[str, Any]]:
                 if due_date.tzinfo is None:
                     due_date = TIMEZONE.localize(due_date)
                 
-                # Проверяем: до дедлайна осталось от 2.5 до 3.5 часов
+                # Проверяем: до дедлайна осталось от 3.5 до 4.5 часов
                 time_until = due_date - now
                 hours_until = time_until.total_seconds() / 3600
                 
-                if 2.5 <= hours_until <= 3.5:
+                if 3.5 <= hours_until <= 4.5:
                     reminder_tasks.append(task)
         
-        logger.info(f"📋 Found {len(reminder_tasks)} tasks for 3h reminder (checked {len(all_tasks)} active tasks)")
+        logger.info(f"📋 Found {len(reminder_tasks)} tasks for 4h reminder (checked {len(all_tasks)} active tasks)")
         return reminder_tasks
         
     finally:
@@ -333,14 +333,14 @@ def get_all_admins() -> List[str]:
 
 async def send_24h_reminder(bot: Bot, task: Dict[str, Any]):
     """
-    Отправить уведомление за 24 часа до срока
+    Отправить уведомление за 8 часов до срока
     
     Args:
         bot: Экземпляр Telegram бота
         task: Данные задачи
     """
     if check_notification_sent(task['id'], '24h'):
-        logger.debug(f"⏭️ 24h reminder already sent for task {task['id']}")
+        logger.debug(f"⏭️ 8h reminder already sent for task {task['id']}")
         return
     
     priority_emoji = {
@@ -358,7 +358,7 @@ async def send_24h_reminder(bot: Bot, task: Dict[str, Any]):
         f"{emoji} <b>{task['title']}</b>\n"
         f"📝 {description_text}...\n\n"
         f"⏳ <b>Срок: {task['due_date'].strftime('%d.%m.%Y %H:%M')}</b>\n"
-        f"⚠️ Осталось <b>~24 часа</b> до дедлайна!\n\n"
+        f"⚠️ Осталось <b>~8 часов</b> до дедлайна!\n\n"
         f"Пожалуйста, завершите задачу вовремя."
     )
     
@@ -370,22 +370,22 @@ async def send_24h_reminder(bot: Bot, task: Dict[str, Any]):
         )
         
         mark_notification_sent(task['id'], '24h')
-        logger.info(f"✅ 24h reminder sent to {task['username']} for task #{task['id']}")
+        logger.info(f"✅ 8h reminder sent to {task['username']} for task #{task['id']}")
         
     except Exception as e:
-        logger.error(f"❌ Error sending 24h reminder for task {task['id']}: {e}")
+        logger.error(f"❌ Error sending 8h reminder for task {task['id']}: {e}")
 
 
 async def send_3h_reminder(bot: Bot, task: Dict[str, Any]):
     """
-    Отправить уведомление за 3 часа до срока
+    Отправить уведомление за 4 часа до срока
     
     Args:
         bot: Экземпляр Telegram бота
         task: Данные задачи
     """
     if check_notification_sent(task['id'], '3h'):
-        logger.debug(f"⏭️ 3h reminder already sent for task {task['id']}")
+        logger.debug(f"⏭️ 4h reminder already sent for task {task['id']}")
         return
     
     priority_emoji = {
@@ -403,7 +403,7 @@ async def send_3h_reminder(bot: Bot, task: Dict[str, Any]):
         f"{emoji} <b>{task['title']}</b>\n"
         f"📝 {description_text}...\n\n"
         f"⏳ <b>Срок: {task['due_date'].strftime('%d.%m.%Y %H:%M')}</b>\n"
-        f"🔥 Осталось всего <b>~3 часа</b>!\n\n"
+        f"🔥 Осталось всего <b>~4 часа</b>!\n\n"
         f"⚡ <b>Необходимо срочно завершить задачу!</b>"
     )
     
@@ -415,10 +415,10 @@ async def send_3h_reminder(bot: Bot, task: Dict[str, Any]):
         )
         
         mark_notification_sent(task['id'], '3h')
-        logger.info(f"✅ 3h reminder sent to {task['username']} for task #{task['id']}")
+        logger.info(f"✅ 4h reminder sent to {task['username']} for task #{task['id']}")
         
     except Exception as e:
-        logger.error(f"❌ Error sending 3h reminder for task {task['id']}: {e}")
+        logger.error(f"❌ Error sending 4h reminder for task {task['id']}: {e}")
 
 
 async def send_1h_reminder(bot: Bot, task: Dict[str, Any]):
@@ -565,13 +565,13 @@ async def check_and_send_notifications(bot: Bot):
     logger.info("🔔 Starting notification check cycle...")
     
     try:
-        # Уведомления за 24 часа
+        # Уведомления за 8 часов
         tasks_24h = get_tasks_for_24h_reminder()
         for task in tasks_24h:
             await send_24h_reminder(bot, task)
             await asyncio.sleep(0.5)  # Небольшая задержка между отправками
         
-        # Уведомления за 3 часа
+        # Уведомления за 4 часа
         tasks_3h = get_tasks_for_3h_reminder()
         for task in tasks_3h:
             await send_3h_reminder(bot, task)
@@ -589,7 +589,7 @@ async def check_and_send_notifications(bot: Bot):
             await send_overdue_notification(bot, task)
             await asyncio.sleep(0.5)
         
-        logger.info(f"✅ Notification check completed: 24h={len(tasks_24h)}, 3h={len(tasks_3h)}, 1h={len(tasks_1h)}, overdue={len(overdue_tasks)}")
+        logger.info(f"✅ Notification check completed: 8h={len(tasks_24h)}, 4h={len(tasks_3h)}, 1h={len(tasks_1h)}, overdue={len(overdue_tasks)}")
         
     except Exception as e:
         logger.error(f"❌ Error in notification check cycle: {e}", exc_info=True)

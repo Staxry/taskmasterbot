@@ -1,6 +1,6 @@
 # Overview
 
-This project is a full-featured asynchronous Telegram bot for task management, built with Python and `aiogram`. It operates via polling, offering a cost-effective and robust solution for team task coordination. Key features include a modular architecture, role-based access (admin/employee), SQLite for local data storage, interactive inline buttons, a whitelist authorization system, FSM for task and user management, comprehensive error handling, task photo support, automated multi-tier deadline notifications (24h/3h/final hour continuous reminders, overdue alerts), advanced statistics with Excel export, pagination, search, full timezone support with precise time selection, **change assignee functionality with notifications**, and **task return with required admin comments**. The bot consistently displays user real names in "First Last (@username)" format across the interface, aiming to provide efficient and proactive task management.
+This project is a full-featured asynchronous Telegram bot for task management, built with Python and `aiogram`. It operates via polling, offering a cost-effective and robust solution for team task coordination. Key features include a modular architecture, role-based access (admin/employee), SQLite for local data storage, interactive inline buttons, a whitelist authorization system, FSM for task and user management, comprehensive error handling, task photo support, automated multi-tier deadline notifications (8h/4h/final hour continuous reminders, overdue alerts), advanced statistics with Excel export, pagination, search, full timezone support with precise time selection, **change assignee functionality with notifications**, and **task return with required admin comments**. The bot consistently displays user real names in "First Last (@username)" format across the interface, aiming to provide efficient and proactive task management.
 
 # User Preferences
 
@@ -26,7 +26,7 @@ The bot utilizes the **Aiogram 3 Router Pattern** with `core_router`, `statuses_
 
 ## Automated Notification System
 
-A **background notification scheduler** runs every 5 minutes, providing proactive deadline management. It sends 24-hour and 3-hour reminders once, and **continuous "final hour" alerts every 5 minutes** during the last hour before a deadline. Overdue alerts are sent to both the executor and all admins. The system uses the `task_notifications` table to prevent duplicate one-time reminders, includes priority indicators, and offers "Open Task" buttons for quick access.
+A **background notification scheduler** runs every 5 minutes, providing proactive deadline management. It sends 8-hour and 4-hour reminders once, and **continuous "final hour" alerts every 5 minutes** during the last hour before a deadline. Overdue alerts are sent to both the executor and all admins. The system uses the `task_notifications` table to prevent duplicate one-time reminders, includes priority indicators, and offers "Open Task" buttons for quick access.
 
 ## Logging System
 
