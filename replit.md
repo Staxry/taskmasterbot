@@ -1,53 +1,6 @@
 # Overview
 
-This project is a full-featured asynchronous Telegram bot designed for task management. Built with Python and the `aiogram` library, it operates via commands using polling, ensuring free operation without AI costs. The system offers a robust, production-ready implementation with a modular architecture, role-based access for task management (admin/employee), and utilizes **SQLite** for local data storage. Its core capabilities include interactive inline buttons for all commands, a whitelist authorization system, FSM for task and user management, error handling, task photos, automated deadline notifications (24h/3h/1h reminders and overdue alerts checked every 5 minutes), advanced statistics with Excel export, pagination, search, **full timezone support with precise time selection**, and **consistent display of user real names from Telegram profiles** in the format "First Last (@username)" throughout the entire interface. The project aims to provide an efficient and cost-effective solution for team task coordination with proactive deadline management and accurate time tracking in the Kaliningrad timezone (UTC+2).
-
-## Recent Updates (Nov 17, 2025)
-
-- **New Task Broadcast Notifications**: All users notified about unassigned tasks
-  - When a new task is created without an assignee, all users (admins + employees) receive notification
-  - Notification excludes the task creator to avoid self-notification
-  - Message format: "🆓 Новая свободная задача!" with task details and "Open Task" button
-  - Encourages team members to pick up available tasks proactively
-  - Confirmation message to creator shows "📢 Уведомления отправлены всем пользователям"
-
-- **Task Reopening Notifications**: Employee notifications when task is returned to work
-  - When admin reopens a completed/partially completed task, assignee receives instant notification
-  - Notification includes admin name, task details, deadline, and direct "Open Task" button
-  - Message format: "🔄 Задача возвращена в работу" with admin's full name and task priority
-  - Helps employees stay informed about tasks requiring rework
-
-- **Implemented Frequent Final Hour Alerts**: Last-minute deadline urgency system
-  - During the final hour (1-60 minutes before deadline), notifications are sent **every 5 minutes**
-  - Each alert shows exact remaining time: "Осталось: X мин"
-  - No duplicate protection for final hour - ensures continuous reminders when most critical
-  - Alert message: "🚨 СРОЧНО! ПОСЛЕДНИЙ ЧАС!" with countdown timer
-
-- **Fixed Timezone Support in Notifications**: Corrected all reminder checks to properly work with Europe/Kaliningrad timezone
-  - Fixed 24h/3h/1h reminder checks - now properly compare timezone-aware datetimes in Python instead of SQL
-  - Fixed overdue task detection to account for UTC+2 timezone
-  - All reminder windows now work correctly: 24h (23-25h), 3h (2.5-3.5h), final hour (1-60min continuous)
-  - Changed timezone abbreviation from "(МСК)" to "(КЛД)" in all notifications
-  - Added configurable TIMEZONE_ABBR in app/config.py for easy timezone label customization
-
-- **Enhanced Notification System**: Improved proactive deadline management
-  - Check frequency increased from 30 minutes to 5 minutes for faster response
-  - Multi-tier reminder system: 24h (single) → 3h (single) → final hour (repeated every 5min)
-  - Reduced error recovery pause from 5 minutes to 1 minute
-  - Overdue notifications now sent to both executor and all admins
-  
-- **Fixed Dashboard Statistics**: Corrected status count calculations
-  - Fixed dict_factory data transformation in statistics module
-  - Status counts now display correctly (was showing all zeros)
-  - Priority counts display correctly in dashboard
-
-- **Enhanced User Display Format**: Implemented consistent "First Last (@username)" display format across the entire bot interface
-  - Task details now show full names for assignees: "Имя Фамилия (@username)" or "@username" fallback
-  - Task lists display assignees with full identity (title truncated if needed to preserve @username)
-  - All notifications (task assignment, status changes, overdue alerts) include full names
-  - Task creation/completion messages show both creator and assignee names
-  - Updated all SQL queries to fetch `first_name` and `last_name` from users table
-  - Unified formatting logic prevents truncation of @username handles
+This project is a full-featured asynchronous Telegram bot for task management, built with Python and `aiogram`. It operates via polling, offering a cost-effective and robust solution for team task coordination. Key features include a modular architecture, role-based access (admin/employee), SQLite for local data storage, interactive inline buttons, a whitelist authorization system, FSM for task and user management, comprehensive error handling, task photo support, automated multi-tier deadline notifications (24h/3h/final hour continuous reminders, overdue alerts), advanced statistics with Excel export, pagination, search, full timezone support with precise time selection, **change assignee functionality with notifications**, and **task return with required admin comments**. The bot consistently displays user real names in "First Last (@username)" format across the interface, aiming to provide efficient and proactive task management.
 
 # User Preferences
 
@@ -57,130 +10,39 @@ Preferred communication style: Simple, everyday language (Russian).
 
 ## Core Framework
 
-The application is developed with **Python 3.11 and aiogram 3.22**, leveraging `asyncio` for asynchronous command processing and operating in polling mode for continuous Telegram API interaction. It uses `MemoryStorage` for the Finite State Machine (FSM) and adheres to `aiogram 3.x` best practices with a modular, router-based architecture. The system includes **pytz** for comprehensive timezone support, ensuring all timestamps are stored and displayed correctly in the Kaliningrad timezone (Europe/Kaliningrad UTC+2).
+The application uses **Python 3.11 and aiogram 3.22**, leveraging `asyncio` for asynchronous processing in polling mode. It employs `MemoryStorage` for the FSM and `pytz` for comprehensive timezone support, ensuring all timestamps are correctly handled in the Kaliningrad timezone (Europe/Kaliningrad UTC+2). The architecture is modular and router-based.
 
-## Modular Structure (v2.0)
+## Modular Structure
 
-The codebase is organized for clarity and maintainability:
-- `app/main.py`: Bot initialization, router registration, and notification scheduler integration.
-- `app/config.py`: Centralized configuration constants.
-- `app/logging_config.py`: Centralized logging setup.
-- `app/database.py`: PostgreSQL connection and schema management.
-- `app/states.py`: FSM state definitions.
-- `app/keyboards/`: Reusable inline keyboard factories.
-- `app/services/`: Business logic for users, tasks, notifications, and statistics.
-- `app/handlers/`: Event handlers organized by domain (core, statuses, photos).
-- `bot.py`: Entry point.
-- `START_BOT.sh`: Interactive management script for deployment.
-- `requirements_deploy.txt`: Complete production dependencies for server deployment.
+The codebase is organized into `app/main.py` (bot initialization, router registration), `app/config.py` (centralized constants), `app/logging_config.py`, `app/database.py` (SQLite connection), `app/states.py` (FSM definitions), `app/keyboards/`, `app/services/` (business logic), and `app/handlers/`.
 
 ## Database Layer
 
-**SQLite3** manages data (файловая база данных), featuring:
-- A schema with `users`, `tasks`, `allowed_users`, and `task_notifications` tables.
-- Enum types for roles, priorities, and statuses.
-- Foreign key relationships between users and tasks.
-- Automatic schema initialization on startup.
-- Key entities:
-    - **Users**: Telegram ID, username, first_name, last_name (from Telegram profile), role, timestamps.
-    - **Tasks**: Title, description, priority, status, due date (TIMESTAMP), assignment, photo file IDs, completion comment.
-    - **Allowed Users**: Whitelist for authorization by username and role.
-    - **Task Notifications**: Tracking sent notifications (task_id, notification_type, sent_at) to prevent duplicates.
+**SQLite3** is used for data management, featuring a schema with `users`, `tasks`, `allowed_users`, and `task_notifications` tables. It includes enum types for roles, priorities, and statuses, and foreign key relationships. Key entities include user profiles (Telegram ID, name, role), tasks (title, description, priority, status, due date, assignment, photo), allowed users for whitelist authorization, and task notification tracking.
 
 ## Bot Architecture
 
-Utilizes the **Aiogram 3 Router Pattern** with `core_router`, `statuses_router`, and `photos_router` registered in `app.main`. Handlers are asynchronous and use decorators. Access rights are validated via the service layer. Each command handler retrieves/creates a user, checks access, performs database operations, and sends a Telegram API response.
+The bot utilizes the **Aiogram 3 Router Pattern** with `core_router`, `statuses_router`, and `photos_router`. Asynchronous handlers validate access rights via the service layer, manage database operations, and send Telegram API responses.
 
 ## Automated Notification System
 
-A **background notification scheduler** runs alongside the bot, providing proactive deadline management:
-- **Implementation**: Asynchronous task created with `asyncio.create_task()`, properly cancelled during shutdown
-- **Check Frequency**: Every 5 minutes (300 seconds)
-- **Notification Types**:
-  - **24-hour reminder**: Sent once to task assignee ~24 hours before deadline
-  - **3-hour reminder**: Sent once to task assignee ~3 hours before deadline
-  - **Final hour alerts**: Sent **every 5 minutes** during the last hour (1-60 minutes before deadline)
-    - Shows exact countdown: "Осталось: X мин"
-    - No duplicate protection - ensures continuous urgency reminders
-    - Alert message: "🚨 СРОЧНО! ПОСЛЕДНИЙ ЧАС!"
-  - **Overdue alert**: Sent once to task executor and all admins when deadline passes
-- **Smart Tracking**: Uses `task_notifications` table to prevent duplicate notifications for 24h/3h/overdue (final hour alerts repeat every check)
-- **NULL-safe**: Handles tasks with missing descriptions gracefully
-- **Priority-aware**: Includes priority emoji indicators in notifications
-- **Quick Actions**: All notifications include "Open Task" button for direct access
-- **Logging**: Comprehensive logging with emoji indicators for monitoring
-- **Error Handling**: On error, scheduler pauses for 1 minute before retrying
+A **background notification scheduler** runs every 5 minutes, providing proactive deadline management. It sends 24-hour and 3-hour reminders once, and **continuous "final hour" alerts every 5 minutes** during the last hour before a deadline. Overdue alerts are sent to both the executor and all admins. The system uses the `task_notifications` table to prevent duplicate one-time reminders, includes priority indicators, and offers "Open Task" buttons for quick access.
 
 ## Logging System
 
-A **centralized logging system** is configured via `app.logging_config`, providing:
-- A rotating file handler (`logs/bot.log`) for detailed logs.
-- A console handler for real-time output.
-- Structured log format including timestamp, module, level, and message.
-- Different logging levels for file (DEBUG) and console (INFO).
-
-## Deployment & Management
-
-- **Environment Variables**: 
-  - На **Replit**: Используются Replit Secrets (приоритетно)
-  - На **внешнем сервере**: Создайте файл `.env` в корне проекта с токеном бота
-  - Файл `.env.example` предоставляет шаблон для всех необходимых переменных
-  - Основные переменные: `TELEGRAM_BOT_TOKEN`, `DATABASE_PATH`, `TIMEZONE`, `TIMEZONE_ABBR`
-  - Подробная инструкция по развертыванию в файле `DEPLOY_SERVER.md`
-- **`START_BOT.sh`**: Интерактивный скрипт для запуска, остановки, перезапуска и проверки статуса бота с опциями управления systemd службой на серверах Ubuntu.
-
-## Polling vs. Webhook
-
-The system uses **Polling** for its simplicity, no HTTPS requirement, and ease of debugging and deployment without needing a public application.
-
-## Design Decisions
-
-- **Python + aiogram**: Chosen for development ease, async capabilities, and community support.
-- **Polling**: Selected for simplified setup and development.
-- **PostgreSQL**: For reliability, transaction support, and relational features.
-- **No AI**: Ensures free operation and predictable behavior.
-- **Modular Architecture & Router Pattern**: For improved maintainability, testability, and adherence to best practices.
+A **centralized logging system** (configured via `app.logging_config`) provides rotating file logs (`logs/bot.log`) and console output. It uses a structured format with different logging levels and emoji indicators for clarity.
 
 ## UI/UX Decisions
 
-- **Interactive Inline Buttons**: Primary mode of user interaction.
-- **Role-Based Access**: Distinguishes admin and employee functionalities.
-- **Task Photo Integration**: Enhances task clarity.
-- **"Open Task" Button**: Quick navigation from notifications and reminders.
-- **Comprehensive Logging**: Uses emoji indicators for clear monitoring.
-- **Pagination**: Implemented for task lists (10 tasks per page) with navigation and page counters.
-- **Task Search**: Allows searching tasks by title and description, accessible to all users with appropriate rights.
-- **Admin Dashboard**: Provides real-time statistics (total, active, completed, overdue tasks, status/priority distribution, top performers) with a refresh option.
-- **Real Name Display**: When selecting users (e.g., assigning tasks), the bot displays "First Last (@username)" using real names from Telegram profiles instead of just "@username", making it easier to identify team members. Names are automatically updated on every interaction.
-- **Auto-Assignment**: When a user takes an unassigned task into work, they are automatically assigned to it, and all admins receive notifications.
-- **Excel Reports**: Admins can generate detailed Excel reports with 4 sheets:
-  - **Statistics**: Overview with key metrics
-  - **Charts**: Visual distribution of status, priority, and performance
-  - **Completed Tasks**: Detailed list with timestamps and assignees
-  - **Overdue Tasks**: Detailed list with days overdue (7+ days highlighted in red)
-- **Automated Reminders**: Proactive 24h/3h deadline notifications and overdue alerts to keep tasks on track.
-- **Timezone Support & Time Selection** (NEW):
-  - **Configurable Timezone**: Default is Europe/Moscow (UTC+3), easily changed in `app/config.py`
-  - **Two-Step Date/Time Selection**: Users first select a date, then choose a specific time
-  - **Time Selection Options**: 09:00-23:59 with quick-select buttons (09:00, 12:00, 15:00, 18:00, 21:00, etc.) and manual input
-  - **Timezone-Aware Storage**: All timestamps stored as `TIMESTAMP WITH TIME ZONE` in PostgreSQL
-  - **Consistent Formatting**: All dates/times displayed as "DD.MM.YYYY HH:MM (МСК)" throughout the interface
-  - **Utility Functions**: `get_now()` returns current time in configured timezone, `combine_datetime()` creates timezone-aware datetime from date and time strings
+The bot prioritizes **interactive inline buttons** for user interaction. It features **role-based access**, **task photo integration**, and quick navigation via "Open Task" buttons. Task lists support **pagination** and **search**. An **admin dashboard** provides real-time statistics with Excel export capabilities (including charts, completed, and overdue tasks). **Real names from Telegram profiles** ("First Last (@username)") are consistently displayed for user identification. The system includes **auto-assignment** for unassigned tasks and comprehensive **timezone support** with two-step date/time selection (date then specific time from 09:00-23:59 with quick-select options), storing timestamps as `TIMESTAMP WITH TIME ZONE`.
 
 # External Dependencies
 
-## Database & Storage
-- **SQLite3**: Файловая база данных (встроена в Python, установка не требуется).
-
-## Telegram Integration
-- **aiogram**: Asynchronous framework for Telegram Bot API.
-- **aiohttp**: Asynchronous HTTP client for network requests.
-- **Telegram Bot API**: Core interaction interface.
-
-## Utilities
-- **python-dotenv**: For loading environment variables.
-- **typing-extensions**: For extended type hinting support.
-- **pytz**: For timezone support and datetime localization (Europe/Moscow UTC+3 by default).
-- **openpyxl**: For Excel report generation.
-- **matplotlib**: For creating charts in Excel reports.
-- **Pillow**: For image processing in reports.
+-   **SQLite3**: Embedded database.
+-   **aiogram**: Telegram Bot API framework.
+-   **aiohttp**: Asynchronous HTTP client.
+-   **python-dotenv**: For environment variable management.
+-   **pytz**: For timezone handling and localization.
+-   **openpyxl**: For Excel report generation.
+-   **matplotlib**: For creating charts in Excel reports.
+-   **Pillow**: For image processing in reports.
