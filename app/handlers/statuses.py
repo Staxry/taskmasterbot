@@ -317,16 +317,30 @@ async def callback_reopen_task(callback: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
         ])
         
-        await callback.message.edit_text(
+        message_text = (
             f"💬 <b>Возврат задачи #{task_id}</b>\n\n"
             f"<b>Задача:</b> {task['title']}\n\n"
             f"📝 Напишите комментарий для исполнителя:\n"
-            f"Опишите, что нужно доделать или скорректировать.",
-            parse_mode='HTML',
-            reply_markup=cancel_keyboard
+            f"Опишите, что нужно доделать или скорректировать."
         )
-        await callback.answer()
         
+        # Пытаемся редактировать сообщение, если не получается - отправляем новое
+        try:
+            await callback.message.edit_text(
+                message_text,
+                parse_mode='HTML',
+                reply_markup=cancel_keyboard
+            )
+        except Exception:
+            logger.debug("⚠️ Could not edit message, sending new one")
+            await callback.message.delete()
+            await callback.message.answer(
+                message_text,
+                parse_mode='HTML',
+                reply_markup=cancel_keyboard
+            )
+        
+        await callback.answer()
         logger.debug(f"🔄 Requesting reopen comment for task #{task_id}")
     
     except Exception as e:
