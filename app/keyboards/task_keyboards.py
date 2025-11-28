@@ -10,7 +10,8 @@ logger = get_logger(__name__)
 
 
 def get_task_keyboard(task_id: int, current_status: str, assigned_to_id: int = None, 
-                     user_id: int = None, is_admin: bool = False) -> InlineKeyboardMarkup:
+                     user_id: int = None, is_admin: bool = False, 
+                     has_task_photo: bool = False) -> InlineKeyboardMarkup:
     """
     Клавиатура для работы с задачей
     
@@ -20,13 +21,18 @@ def get_task_keyboard(task_id: int, current_status: str, assigned_to_id: int = N
         assigned_to_id: ID назначенного исполнителя
         user_id: ID текущего пользователя
         is_admin: Является ли пользователь админом
+        has_task_photo: Есть ли фото у задачи
     
     Returns:
         InlineKeyboardMarkup: Клавиатура задачи
     """
-    logger.debug(f"🎹 Generating task keyboard for task #{task_id}, status: {current_status}")
+    logger.debug(f"🎹 Generating task keyboard for task #{task_id}, status: {current_status}, has_photo: {has_task_photo}")
     
     buttons = []
+    
+    # Кнопка просмотра фото задачи (если есть)
+    if has_task_photo:
+        buttons.append([InlineKeyboardButton(text="📸 Просмотреть фото", callback_data=f"view_task_photo_{task_id}")])
     
     # Если задача не назначена и пользователь не админ - показываем кнопку "Взять в работу"
     if assigned_to_id is None and not is_admin:

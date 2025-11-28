@@ -176,7 +176,8 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
         
         cur.execute(
             """SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, 
-                      u.username, u.first_name, u.last_name, t.created_at, t.assigned_to_id, t.completion_comment, t.photo_file_id
+                      u.username, u.first_name, u.last_name, t.created_at, t.assigned_to_id, 
+                      t.completion_comment, t.photo_file_id, t.task_photo_file_id
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
                WHERE t.id = ?""",
@@ -198,6 +199,7 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
             assigned_to_id = updated_task['assigned_to_id']
             completion_comment = updated_task.get('completion_comment')
             photo_file_id = updated_task.get('photo_file_id')
+            task_photo_file_id = updated_task.get('task_photo_file_id')
             
             from app.config import format_datetime_for_display
             due_date = format_datetime_for_display(due_date_raw)
@@ -237,24 +239,29 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
 <b>Создана:</b> {created_at_formatted}
 """
             
+            if task_photo_file_id:
+                text += "<b>📸 Фото:</b> Есть (нажмите кнопку ниже)\n"
+            
             if status in ['completed', 'partially_completed'] and completion_comment:
                 text += f"\n💬 <b>Комментарий:</b>\n{completion_comment}\n"
             
             if status not in ['completed', 'partially_completed']:
                 text += "\nВыберите новый статус:"
             
+            has_task_photo = bool(task_photo_file_id)
+            
             try:
                 await callback.message.edit_text(
                     text,
                     parse_mode='HTML',
-                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
+                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin', has_task_photo)
                 )
             except Exception:
                 await callback.message.delete()
                 await callback.message.answer(
                     text,
                     parse_mode='HTML',
-                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
+                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin', has_task_photo)
                 )
     
     except Exception as e:

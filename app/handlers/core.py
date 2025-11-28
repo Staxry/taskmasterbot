@@ -570,7 +570,8 @@ async def callback_task_details(callback: CallbackQuery):
     try:
         cur.execute(
             """SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, 
-                      u.username, u.first_name, u.last_name, t.created_at, t.assigned_to_id, t.completion_comment, t.photo_file_id
+                      u.username, u.first_name, u.last_name, t.created_at, t.assigned_to_id, 
+                      t.completion_comment, t.photo_file_id, t.task_photo_file_id
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
                WHERE t.id = ?""",
@@ -596,8 +597,9 @@ async def callback_task_details(callback: CallbackQuery):
         assigned_to_id = task['assigned_to_id']
         completion_comment = task.get('completion_comment')
         photo_file_id = task.get('photo_file_id')
+        task_photo_file_id = task.get('task_photo_file_id')
         
-        logger.debug(f"📊 Task #{tid}: status={status}, assigned_to={assigned_username}, has_photo={bool(photo_file_id)}")
+        logger.debug(f"📊 Task #{tid}: status={status}, assigned_to={assigned_username}, has_photo={bool(photo_file_id)}, has_task_photo={bool(task_photo_file_id)}")
         
         status_text = {
             'pending': '⏳ Ожидает',
@@ -634,6 +636,9 @@ async def callback_task_details(callback: CallbackQuery):
 <b>Создана:</b> {created_at}
 """
         
+        if task_photo_file_id:
+            text += "<b>📸 Фото:</b> Есть (нажмите кнопку ниже)\n"
+        
         if status in ['completed', 'partially_completed'] and completion_comment:
             text += f"\n\n💬 <b>Комментарий:</b>\n{completion_comment}"
         
@@ -642,6 +647,8 @@ async def callback_task_details(callback: CallbackQuery):
         elif status not in ['completed', 'partially_completed']:
             text += "\n\nВыберите новый статус:"
         
+        has_task_photo = bool(task_photo_file_id)
+        
         if status in ['completed', 'partially_completed'] and photo_file_id:
             logger.debug(f"📸 Sending task #{tid} with completion photo")
             await callback.message.delete()
@@ -649,14 +656,14 @@ async def callback_task_details(callback: CallbackQuery):
                 photo=photo_file_id,
                 caption=text,
                 parse_mode='HTML',
-                reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
+                reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin', has_task_photo)
             )
         else:
             try:
                 await callback.message.edit_text(
                     text,
                     parse_mode='HTML',
-                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
+                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin', has_task_photo)
                 )
             except Exception:
                 logger.debug(f"⚠️ Could not edit message, deleting and resending")
@@ -664,10 +671,75 @@ async def callback_task_details(callback: CallbackQuery):
                 await callback.message.answer(
                     text,
                     parse_mode='HTML',
-                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin')
+                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin', has_task_photo)
                 )
         
         await callback.answer()
+    
+    finally:
+        cur.close()
+        conn.close()
+
+
+@core_router.callback_query(F.data.startswith("view_task_photo_"))
+async def callback_view_task_photo(callback: CallbackQuery):
+    """Просмотреть фото задачи"""
+    task_id = int(callback.data.split('_')[-1])
+    
+    telegram_id = str(callback.from_user.id)
+    username = callback.from_user.username
+    first_name = callback.from_user.first_name or ''
+    last_name = callback.from_user.last_name or ''
+    
+    logger.info(f"📸 Task photo view requested for task #{task_id} by {username}")
+    
+    user = get_or_create_user(telegram_id, username, first_name, last_name)
+    if not user:
+        await callback.answer("❌ Доступ запрещён", show_alert=True)
+        return
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        cur.execute(
+            """SELECT t.id, t.title, t.task_photo_file_id, t.status, t.assigned_to_id
+               FROM tasks t
+               WHERE t.id = ?""",
+            (task_id,)
+        )
+        task = cur.fetchone()
+        
+        if not task:
+            logger.warning(f"⚠️ Task #{task_id} not found for photo view")
+            await callback.answer("❌ Задача не найдена.", show_alert=True)
+            return
+        
+        task_photo_file_id = task.get('task_photo_file_id')
+        title = task['title']
+        status = task['status']
+        assigned_to_id = task['assigned_to_id']
+        
+        if not task_photo_file_id:
+            logger.warning(f"⚠️ Task #{task_id} has no photo")
+            await callback.answer("❌ У этой задачи нет прикреплённого фото.", show_alert=True)
+            return
+        
+        logger.info(f"📸 Sending task photo for task #{task_id}")
+        
+        back_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 К задаче", callback_data=f"task_{task_id}")]
+        ])
+        
+        await callback.message.answer_photo(
+            photo=task_photo_file_id,
+            caption=f"📸 <b>Фото к задаче #{task_id}</b>\n\n<b>Название:</b> {title}",
+            parse_mode='HTML',
+            reply_markup=back_keyboard
+        )
+        
+        await callback.answer()
+        logger.info(f"✅ Task photo sent for task #{task_id}")
     
     finally:
         cur.close()
