@@ -53,3 +53,16 @@ class ChangeAssigneeStates(StatesGroup):
 class ReopenTaskStates(StatesGroup):
     """Состояния для возврата задачи с комментарием"""
     waiting_for_comment = State()
+
+
+class CommentStates(StatesGroup):
+    """Состояния для добавления комментария к задаче"""
+    waiting_for_comment_text = State()
+    waiting_for_comment_file = State()
+
+
+class NotificationSettingsStates(StatesGroup):
+    """Состояния для настройки уведомлений"""
+    waiting_for_quiet_hours_start = State()
+    waiting_for_quiet_hours_end = State()
+    waiting_for_custom_intervals = State()

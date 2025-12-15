@@ -31,6 +31,9 @@ def register_routers():
     import app.handlers.core
     import app.handlers.statuses
     import app.handlers.photos
+    import app.handlers.comments
+    import app.handlers.history
+    import app.handlers.notification_settings
     
     # Регистрируем в правильном порядке
     dp.include_router(photos_router)

@@ -9,6 +9,7 @@ from aiogram import Bot
 from app.database import get_db_connection
 from app.logging_config import get_logger
 from app.config import get_now, TIMEZONE
+from app.services.notification_settings import should_send_notification
 
 logger = get_logger(__name__)
 
@@ -97,7 +98,7 @@ def get_tasks_for_24h_reminder() -> List[Dict[str, Any]]:
                 u.last_name
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
-            WHERE t.status NOT IN ('completed', 'rejected')
+            WHERE t.status NOT IN ('completed', 'partially_completed', 'rejected')
             AND t.due_date IS NOT NULL
         """)
         
@@ -156,7 +157,7 @@ def get_tasks_for_3h_reminder() -> List[Dict[str, Any]]:
                 u.last_name
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
-            WHERE t.status NOT IN ('completed', 'rejected')
+            WHERE t.status NOT IN ('completed', 'partially_completed', 'rejected')
             AND t.due_date IS NOT NULL
         """)
         
@@ -191,7 +192,7 @@ def get_tasks_for_3h_reminder() -> List[Dict[str, Any]]:
 def get_tasks_for_1h_reminder() -> List[Dict[str, Any]]:
     """
     Получить задачи, до срока которых осталось меньше 1 часа
-    В последний час уведомления отправляются каждые 5 минут
+    В последний час уведомления отправляются каждые 10 минут
     Проверка времени выполняется в Python с учётом timezone
     
     Returns:
@@ -216,7 +217,7 @@ def get_tasks_for_1h_reminder() -> List[Dict[str, Any]]:
                 u.last_name
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
-            WHERE t.status NOT IN ('completed', 'rejected')
+            WHERE t.status NOT IN ('completed', 'partially_completed', 'rejected')
             AND t.due_date IS NOT NULL
         """)
         
@@ -237,7 +238,7 @@ def get_tasks_for_1h_reminder() -> List[Dict[str, Any]]:
                 time_until = due_date - now
                 minutes_until = time_until.total_seconds() / 60
                 
-                # В последний час отправляем уведомления постоянно (каждые 5 минут)
+                # В последний час отправляем уведомления постоянно (каждые 10 минут)
                 if 1 <= minutes_until <= 60:
                     reminder_tasks.append(task)
         
@@ -276,7 +277,7 @@ def get_overdue_tasks() -> List[Dict[str, Any]]:
                 u.last_name
             FROM tasks t
             JOIN users u ON t.assigned_to_id = u.id
-            WHERE t.status NOT IN ('completed', 'rejected')
+            WHERE t.status NOT IN ('completed', 'partially_completed', 'rejected')
             AND t.due_date IS NOT NULL
         """)
         
@@ -343,6 +344,11 @@ async def send_24h_reminder(bot: Bot, task: Dict[str, Any]):
         logger.debug(f"⏭️ 8h reminder already sent for task {task['id']}")
         return
     
+    # Проверяем персональные настройки пользователя
+    if not should_send_notification(task['assigned_to_id'], '24h'):
+        logger.debug(f"⏭️ 8h reminder disabled for user {task['assigned_to_id']}")
+        return
+    
     priority_emoji = {
         'urgent': '🔴',
         'high': '🟠',
@@ -388,6 +394,11 @@ async def send_3h_reminder(bot: Bot, task: Dict[str, Any]):
         logger.debug(f"⏭️ 4h reminder already sent for task {task['id']}")
         return
     
+    # Проверяем персональные настройки пользователя
+    if not should_send_notification(task['assigned_to_id'], '3h'):
+        logger.debug(f"⏭️ 4h reminder disabled for user {task['assigned_to_id']}")
+        return
+    
     priority_emoji = {
         'urgent': '🔴',
         'high': '🟠',
@@ -424,12 +435,16 @@ async def send_3h_reminder(bot: Bot, task: Dict[str, Any]):
 async def send_1h_reminder(bot: Bot, task: Dict[str, Any]):
     """
     Отправить срочное уведомление в последний час
-    Отправляется каждые 5 минут без проверки дубликатов
+    Отправляется каждые 10 минут без проверки дубликатов
     
     Args:
         bot: Экземпляр Telegram бота
         task: Данные задачи
     """
+    # Проверяем персональные настройки пользователя
+    if not should_send_notification(task['assigned_to_id'], '1h'):
+        logger.debug(f"⏭️ 1h reminder disabled for user {task['assigned_to_id']}")
+        return
     priority_emoji = {
         'urgent': '🔴',
         'high': '🟠',
@@ -480,6 +495,11 @@ async def send_overdue_notification(bot: Bot, task: Dict[str, Any]):
     """
     if check_notification_sent(task['id'], 'overdue'):
         logger.debug(f"⏭️ Overdue notification already sent for task {task['id']}")
+        return
+    
+    # Проверяем персональные настройки пользователя
+    if not should_send_notification(task['assigned_to_id'], 'overdue'):
+        logger.debug(f"⏭️ Overdue notification disabled for user {task['assigned_to_id']}")
         return
     
     priority_emoji = {
@@ -598,17 +618,17 @@ async def check_and_send_notifications(bot: Bot):
 async def notification_scheduler(bot: Bot):
     """
     Фоновая задача для периодической проверки уведомлений
-    Проверка каждые 5 минут
+    Проверка каждые 10 минут
     
     Args:
         bot: Экземпляр Telegram бота
     """
-    logger.info("🔔 Notification scheduler started (check every 5 minutes)")
+    logger.info("🔔 Notification scheduler started (check every 10 minutes)")
     
     while True:
         try:
             await check_and_send_notifications(bot)
-            await asyncio.sleep(300)  # 5 минут = 300 секунд
+            await asyncio.sleep(600)  # 10 минут = 600 секунд
             
         except Exception as e:
             logger.error(f"❌ Error in notification scheduler: {e}", exc_info=True)

@@ -11,8 +11,9 @@ from aiogram.fsm.context import FSMContext
 from app.handlers import core_router
 from app.database import get_db_connection
 from app.services.users import get_or_create_user
+from app.services.task_history import add_task_history_entry
 from app.keyboards.main_menu import get_main_keyboard
-from app.keyboards.task_keyboards import get_task_keyboard, get_priority_keyboard, get_due_date_keyboard, get_due_time_keyboard
+from app.keyboards.task_keyboards import get_task_keyboard, get_priority_keyboard, get_due_date_keyboard, get_due_time_keyboard, is_mobile_device
 from app.keyboards.user_keyboards import get_users_keyboard
 from app.states import CreateTaskStates, AddUserStates, SearchTaskStates
 from app.logging_config import get_logger
@@ -52,7 +53,7 @@ async def cmd_start(message: Message):
         f"Роль: <b>{role_text}</b>\n\n"
         f"Выберите действие:",
         parse_mode='HTML',
-        reply_markup=get_main_keyboard(user['role'])
+        reply_markup=get_main_keyboard(user['role'], is_mobile_device())
     )
 
 
@@ -94,7 +95,7 @@ async def callback_help(callback: CallbackQuery):
     await callback.message.edit_text(
         text,
         parse_mode='HTML',
-        reply_markup=get_main_keyboard(user['role'])
+        reply_markup=get_main_keyboard(user['role'], is_mobile_device())
     )
     await callback.answer()
 
@@ -223,7 +224,7 @@ async def process_add_user(message: Message, state: FSMContext):
             f"Роль: {role_text}\n\n"
             f"Теперь пользователь @{new_username} может отправить /start боту для авторизации.",
             parse_mode='HTML',
-            reply_markup=get_main_keyboard(user['role'])
+            reply_markup=get_main_keyboard(user['role'], is_mobile_device())
         )
         
         await state.clear()
@@ -232,7 +233,7 @@ async def process_add_user(message: Message, state: FSMContext):
         logger.error(f"❌ Error adding user {new_username}: {e}", exc_info=True)
         await message.answer(
             f"❌ Ошибка при добавлении пользователя: {str(e)}",
-            reply_markup=get_main_keyboard(user['role'])
+            reply_markup=get_main_keyboard(user['role'], is_mobile_device())
         )
         await state.clear()
     finally:
@@ -317,13 +318,13 @@ async def show_my_tasks_page(callback: CallbackQuery, page: int = 1):
             try:
                 await callback.message.edit_text(
                     "📋 У вас пока нет задач.",
-                    reply_markup=get_main_keyboard(user['role'])
+                    reply_markup=get_main_keyboard(user['role'], is_mobile_device())
                 )
             except Exception:
                 await callback.message.delete()
                 await callback.message.answer(
                     "📋 У вас пока нет задач.",
-                    reply_markup=get_main_keyboard(user['role'])
+                    reply_markup=get_main_keyboard(user['role'], is_mobile_device())
                 )
             await callback.answer()
             return
@@ -467,7 +468,7 @@ async def show_all_tasks_page(callback: CallbackQuery, page: int = 1):
         if total_count == 0:
             await callback.message.edit_text(
                 "📋 В системе пока нет задач.",
-                reply_markup=get_main_keyboard(user['role'])
+                reply_markup=get_main_keyboard(user['role'], is_mobile_device())
             )
             await callback.answer()
             return
@@ -547,10 +548,27 @@ async def show_all_tasks_page(callback: CallbackQuery, page: int = 1):
         conn.close()
 
 
-@core_router.callback_query(F.data.startswith("task_") & ~F.data.in_({"task_photo_yes", "task_photo_no"}))
+@core_router.callback_query(
+    F.data.startswith("task_") 
+    & ~F.data.in_({"task_photo_yes", "task_photo_no"})
+    & ~F.data.startswith("task_comments_")
+    & ~F.data.startswith("task_history_")
+)
 async def callback_task_details(callback: CallbackQuery):
     """Показать детали задачи"""
-    task_id = int(callback.data.split('_')[1])
+    # Безопасное извлечение task_id
+    parts = callback.data.split('_')
+    if len(parts) < 2:
+        logger.error(f"❌ Invalid callback_data format: {callback.data}")
+        await callback.answer("❌ Ошибка: неверный формат данных", show_alert=True)
+        return
+    
+    try:
+        task_id = int(parts[1])
+    except ValueError:
+        logger.error(f"❌ Invalid task_id in callback_data: {callback.data}")
+        await callback.answer("❌ Ошибка: неверный ID задачи", show_alert=True)
+        return
     
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
@@ -571,7 +589,7 @@ async def callback_task_details(callback: CallbackQuery):
         cur.execute(
             """SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, 
                       u.username, u.first_name, u.last_name, t.created_at, t.assigned_to_id, 
-                      t.completion_comment, t.photo_file_id, t.task_photo_file_id
+                      t.completion_comment, t.photo_file_id
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
                WHERE t.id = ?""",
@@ -583,6 +601,11 @@ async def callback_task_details(callback: CallbackQuery):
             logger.warning(f"⚠️ Task #{task_id} not found")
             await callback.answer("❌ Задача не найдена.", show_alert=True)
             return
+        
+        # Получаем все фото задачи из новой таблицы
+        cur.execute("SELECT photo_file_id FROM task_photos WHERE task_id = ? ORDER BY created_at", (task_id,))
+        task_photos = cur.fetchall()
+        task_photo_file_ids = [p['photo_file_id'] for p in task_photos]
         
         tid = task['id']
         title = task['title']
@@ -597,9 +620,8 @@ async def callback_task_details(callback: CallbackQuery):
         assigned_to_id = task['assigned_to_id']
         completion_comment = task.get('completion_comment')
         photo_file_id = task.get('photo_file_id')
-        task_photo_file_id = task.get('task_photo_file_id')
         
-        logger.debug(f"📊 Task #{tid}: status={status}, assigned_to={assigned_username}, has_photo={bool(photo_file_id)}, has_task_photo={bool(task_photo_file_id)}")
+        logger.debug(f"📊 Task #{tid}: status={status}, assigned_to={assigned_username}, has_photo={bool(photo_file_id)}, has_task_photos={len(task_photo_file_ids)}")
         
         status_text = {
             'pending': '⏳ Ожидает',
@@ -636,8 +658,8 @@ async def callback_task_details(callback: CallbackQuery):
 <b>Создана:</b> {created_at}
 """
         
-        if task_photo_file_id:
-            text += "<b>📸 Фото:</b> Есть (нажмите кнопку ниже)\n"
+        if task_photo_file_ids:
+            text += f"<b>📸 Фото:</b> {len(task_photo_file_ids)} шт. (нажмите кнопку ниже)\n"
         
         if status in ['completed', 'partially_completed'] and completion_comment:
             text += f"\n\n💬 <b>Комментарий:</b>\n{completion_comment}"
@@ -647,7 +669,7 @@ async def callback_task_details(callback: CallbackQuery):
         elif status not in ['completed', 'partially_completed']:
             text += "\n\nВыберите новый статус:"
         
-        has_task_photo = bool(task_photo_file_id)
+        has_task_photo = len(task_photo_file_ids) > 0
         
         if status in ['completed', 'partially_completed'] and photo_file_id:
             logger.debug(f"📸 Sending task #{tid} with completion photo")
@@ -656,14 +678,14 @@ async def callback_task_details(callback: CallbackQuery):
                 photo=photo_file_id,
                 caption=text,
                 parse_mode='HTML',
-                reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin', has_task_photo)
+                reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin', has_task_photo, is_mobile_device())
             )
         else:
             try:
                 await callback.message.edit_text(
                     text,
                     parse_mode='HTML',
-                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin', has_task_photo)
+                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin', has_task_photo, is_mobile_device())
                 )
             except Exception:
                 logger.debug(f"⚠️ Could not edit message, deleting and resending")
@@ -671,7 +693,7 @@ async def callback_task_details(callback: CallbackQuery):
                 await callback.message.answer(
                     text,
                     parse_mode='HTML',
-                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin', has_task_photo)
+                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin', has_task_photo, is_mobile_device())
                 )
         
         await callback.answer()
@@ -703,7 +725,7 @@ async def callback_view_task_photo(callback: CallbackQuery):
     
     try:
         cur.execute(
-            """SELECT t.id, t.title, t.task_photo_file_id, t.status, t.assigned_to_id
+            """SELECT t.id, t.title, t.status, t.assigned_to_id
                FROM tasks t
                WHERE t.id = ?""",
             (task_id,)
@@ -715,31 +737,44 @@ async def callback_view_task_photo(callback: CallbackQuery):
             await callback.answer("❌ Задача не найдена.", show_alert=True)
             return
         
-        task_photo_file_id = task.get('task_photo_file_id')
+        # Получаем все фото задачи
+        cur.execute("SELECT photo_file_id FROM task_photos WHERE task_id = ? ORDER BY created_at", (task_id,))
+        task_photos = cur.fetchall()
+        task_photo_file_ids = [p['photo_file_id'] for p in task_photos]
+        
         title = task['title']
         status = task['status']
         assigned_to_id = task['assigned_to_id']
         
-        if not task_photo_file_id:
-            logger.warning(f"⚠️ Task #{task_id} has no photo")
-            await callback.answer("❌ У этой задачи нет прикреплённого фото.", show_alert=True)
+        if not task_photo_file_ids:
+            logger.warning(f"⚠️ Task #{task_id} has no photos")
+            await callback.answer("❌ У этой задачи нет прикреплённых фото.", show_alert=True)
             return
         
-        logger.info(f"📸 Sending task photo for task #{task_id}")
+        logger.info(f"📸 Sending {len(task_photo_file_ids)} task photo(s) for task #{task_id}")
         
         back_keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 К задаче", callback_data=f"task_{task_id}")]
         ])
         
+        # Отправляем первое фото с подписью
         await callback.message.answer_photo(
-            photo=task_photo_file_id,
-            caption=f"📸 <b>Фото к задаче #{task_id}</b>\n\n<b>Название:</b> {title}",
+            photo=task_photo_file_ids[0],
+            caption=f"📸 <b>Фото к задаче #{task_id}</b>\n\n<b>Название:</b> {title}\n\nФото 1 из {len(task_photo_file_ids)}",
             parse_mode='HTML',
             reply_markup=back_keyboard
         )
         
+        # Отправляем остальные фото
+        for idx, photo_id in enumerate(task_photo_file_ids[1:], 2):
+            await callback.message.answer_photo(
+                photo=photo_id,
+                caption=f"📸 Фото {idx} из {len(task_photo_file_ids)}",
+                parse_mode='HTML'
+            )
+        
         await callback.answer()
-        logger.info(f"✅ Task photo sent for task #{task_id}")
+        logger.info(f"✅ Task photos sent for task #{task_id}")
     
     finally:
         cur.close()
@@ -800,11 +835,19 @@ async def callback_take_task(callback: CallbackQuery):
             await callback.answer("❌ Эта задача уже назначена другому сотруднику.", show_alert=True)
             return
         
+        # Получаем старый статус для истории
+        old_status = task.get('status', 'pending')
+        
         cur.execute(
             "UPDATE tasks SET assigned_to_id = ?, status = 'in_progress', updated_at = datetime('now') WHERE id = ?",
             (user['id'], task_id)
         )
         conn.commit()
+        
+        # Записываем в историю: назначение исполнителя и изменение статуса
+        add_task_history_entry(task_id, user['id'], 'assignee', None, str(user['id']))
+        if old_status != 'in_progress':
+            add_task_history_entry(task_id, user['id'], 'status', old_status, 'in_progress')
         
         logger.info(f"✅ Task #{task_id} assigned to {username} (id={user['id']})")
         
@@ -852,11 +895,16 @@ async def callback_take_task(callback: CallbackQuery):
                 
                 try:
                     if task_photo_file_id:
-                        logger.info(f"📸 Sending notification WITH photo to admin {creator_username}")
+                        logger.info(f"📸 Sending photo first, then notification to admin {creator_username}")
+                        # Сначала отправляем фото
                         await callback.message.bot.send_photo(
                             chat_id=creator_telegram_id,
-                            photo=task_photo_file_id,
-                            caption=notification_text,
+                            photo=task_photo_file_id
+                        )
+                        # Потом отправляем текстовое сообщение с описанием и кнопкой
+                        await callback.message.bot.send_message(
+                            chat_id=creator_telegram_id,
+                            text=notification_text,
                             parse_mode='HTML',
                             reply_markup=task_keyboard
                         )
@@ -935,9 +983,21 @@ async def callback_create_task(callback: CallbackQuery, state: FSMContext):
 @core_router.message(CreateTaskStates.waiting_for_title)
 async def process_task_title(message: Message, state: FSMContext):
     """Получить название задачи"""
-    logger.info(f"📝 Task title received: {message.text[:30]}...")
+    title = message.text.strip() if message.text else ''
     
-    await state.update_data(title=message.text)
+    # Валидация: проверяем, что title не пустой
+    if not title:
+        logger.warning(f"⚠️ Empty title received from user {message.from_user.username}")
+        await message.answer(
+            "❌ <b>Название задачи не может быть пустым!</b>\n\n"
+            "Пожалуйста, введите название задачи:",
+            parse_mode='HTML'
+        )
+        return
+    
+    logger.info(f"📝 Task title received: {title[:30]}...")
+    
+    await state.update_data(title=title)
     await state.set_state(CreateTaskStates.waiting_for_description)
     
     skip_keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -1218,7 +1278,7 @@ async def callback_delete_task_menu(callback: CallbackQuery):
         if not tasks:
             await callback.message.edit_text(
                 "📋 Нет незавершённых задач для удаления.",
-                reply_markup=get_main_keyboard(user['role'])
+                reply_markup=get_main_keyboard(user['role'], is_mobile_device())
             )
             await callback.answer()
             return
@@ -1338,7 +1398,7 @@ async def callback_delete_confirm(callback: CallbackQuery):
             f"Название: {task_title}\n\n"
             f"Задача полностью удалена из системы.",
             parse_mode='HTML',
-            reply_markup=get_main_keyboard(user['role'])
+            reply_markup=get_main_keyboard(user['role'], is_mobile_device())
         )
         await callback.answer("✅ Задача удалена", show_alert=True)
     
@@ -1561,6 +1621,7 @@ async def callback_confirm_remove_user(callback: CallbackQuery):
 async def callback_dashboard(callback: CallbackQuery):
     """Показать дашборд со статистикой"""
     from app.services.statistics import get_dashboard_statistics
+    from app.keyboards.task_keyboards import is_mobile_device
     
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
@@ -1569,89 +1630,148 @@ async def callback_dashboard(callback: CallbackQuery):
     
     logger.info(f"📈 Dashboard requested by {username}")
     
-    user = get_or_create_user(telegram_id, username, first_name, last_name)
-    if not user or user['role'] != 'admin':
-        await callback.answer("❌ Только администраторы могут просматривать статистику", show_alert=True)
-        return
-    
-    stats = get_dashboard_statistics(user['role'])
-    
-    if not stats:
-        await callback.answer("❌ Не удалось получить статистику", show_alert=True)
-        return
-    
-    # Форматирование текста статистики
-    text = "📈 <b>Дашборд статистики</b>\n\n"
-    
-    text += "📊 <b>Общая информация:</b>\n"
-    text += f"▫️ Всего задач: <b>{stats['total_tasks']}</b>\n"
-    text += f"▫️ Активных: <b>{stats['active_tasks']}</b>\n"
-    text += f"▫️ Завершённых: <b>{stats['by_status']['completed']}</b>\n"
-    text += f"▫️ Просрочено: <b>{stats['overdue_tasks']}</b> ⚠️\n\n"
-    
-    text += "📋 <b>По статусам:</b>\n"
-    text += f"⏳ Ожидает: {stats['by_status']['pending']}\n"
-    text += f"🔄 В работе: {stats['by_status']['in_progress']}\n"
-    text += f"🔶 Частично: {stats['by_status']['partially_completed']}\n"
-    text += f"✅ Завершено: {stats['by_status']['completed']}\n"
-    text += f"❌ Отклонено: {stats['by_status']['rejected']}\n\n"
-    
-    if stats.get('by_priority'):
-        text += "🎯 <b>По приоритетам (активные):</b>\n"
-        priority_emoji = {'urgent': '🔴', 'high': '🟠', 'medium': '🟡', 'low': '🟢'}
-        for priority, count in stats['by_priority'].items():
-            emoji = priority_emoji.get(priority, '📌')
-            text += f"{emoji} {priority.capitalize()}: {count}\n"
-        text += "\n"
-    
-    text += f"📅 Создано сегодня: {stats['today_created']}\n"
-    text += f"✅ Завершено за неделю: {stats['completed_last_week']}\n\n"
-    
-    if stats.get('top_performers'):
-        text += "🏆 <b>Топ исполнителей:</b>\n"
-        for i, performer in enumerate(stats['top_performers'][:3], 1):
-            medals = {1: '🥇', 2: '🥈', 3: '🥉'}
-            medal = medals.get(i, '🏅')
-            
-            username = performer['username']
-            first_name = performer.get('first_name')
-            last_name = performer.get('last_name')
-            count = performer['task_count']
-            
-            # Форматируем имя исполнителя
-            if first_name or last_name:
-                user_display = f"{first_name or ''} {last_name or ''}".strip() + f" (@{username})"
-            else:
-                user_display = f"@{username}"
-            
-            text += f"{medal} {user_display}: {count} задач\n"
-    
-    # Кнопки для экспорта
-    buttons = [
-        [InlineKeyboardButton(text="📊 Полный отчёт Excel", callback_data="export_full")],
-        [InlineKeyboardButton(text="📈 Отчёт по статусам", callback_data="export_status")],
-        [InlineKeyboardButton(text="👥 Отчёт по исполнителям", callback_data="export_users")],
-        [InlineKeyboardButton(text="🔄 Обновить данные", callback_data="dashboard")],
-        [InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")]
-    ]
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    
     try:
-        await callback.message.edit_text(
-            text,
-            parse_mode='HTML',
-            reply_markup=keyboard
-        )
-    except Exception:
-        await callback.message.delete()
-        await callback.message.answer(
-            text,
-            parse_mode='HTML',
-            reply_markup=keyboard
-        )
+        user = get_or_create_user(telegram_id, username, first_name, last_name)
+        if not user:
+            await callback.answer("❌ Доступ запрещён", show_alert=True)
+            return
+        
+        if user['role'] != 'admin':
+            await callback.answer("❌ Только администраторы могут просматривать статистику", show_alert=True)
+            return
+        
+        stats = get_dashboard_statistics(user['role'])
+        
+        if not stats or len(stats) == 0:
+            logger.warning(f"⚠️ Empty statistics returned for user {username}")
+            await callback.answer("❌ Не удалось получить статистику. Возможно, в системе нет задач.", show_alert=True)
+            return
     
-    await callback.answer()
+        # Форматирование текста статистики
+        text = "📈 <b>Дашборд статистики</b>\n\n"
+        
+        # Безопасное получение значений с проверкой
+        total_tasks = stats.get('total_tasks', 0)
+        active_tasks = stats.get('active_tasks', 0)
+        by_status = stats.get('by_status', {})
+        overdue_tasks = stats.get('overdue_tasks', 0)
+        today_created = stats.get('today_created', 0)
+        completed_last_week = stats.get('completed_last_week', 0)
+        
+        text += "📊 <b>Общая информация:</b>\n"
+        text += f"▫️ Всего задач: <b>{total_tasks}</b>\n"
+        text += f"▫️ Активных: <b>{active_tasks}</b>\n"
+        
+        completed_count = by_status.get('completed', 0)
+        partially_completed = by_status.get('partially_completed', 0)
+        total_completed = completed_count + partially_completed
+        
+        if total_tasks > 0:
+            completion_rate = round((total_completed / total_tasks) * 100, 1)
+            text += f"▫️ Завершённых: <b>{total_completed}</b> ({completion_rate}%)\n"
+        else:
+            text += f"▫️ Завершённых: <b>{total_completed}</b>\n"
+        
+        if overdue_tasks > 0:
+            text += f"▫️ Просрочено: <b>{overdue_tasks}</b> ⚠️\n"
+        else:
+            text += f"▫️ Просрочено: <b>{overdue_tasks}</b> ✅\n"
+        text += "\n"
+        
+        text += "📋 <b>По статусам:</b>\n"
+        text += f"⏳ Ожидает: {by_status.get('pending', 0)}\n"
+        text += f"🔄 В работе: {by_status.get('in_progress', 0)}\n"
+        text += f"🔶 Частично: {by_status.get('partially_completed', 0)}\n"
+        text += f"✅ Завершено: {by_status.get('completed', 0)}\n"
+        text += f"❌ Отклонено: {by_status.get('rejected', 0)}\n\n"
+    
+        by_priority = stats.get('by_priority', {})
+        if by_priority and len(by_priority) > 0:
+            text += "🎯 <b>По приоритетам (активные):</b>\n"
+            priority_emoji = {'urgent': '🔴', 'high': '🟠', 'medium': '🟡', 'low': '🟢'}
+            priority_labels = {'urgent': 'Срочно', 'high': 'Высокий', 'medium': 'Средний', 'low': 'Низкий'}
+            for priority, count in by_priority.items():
+                emoji = priority_emoji.get(priority, '📌')
+                label = priority_labels.get(priority, priority.capitalize())
+                text += f"{emoji} {label}: {count}\n"
+            text += "\n"
+        
+        # Дополнительная статистика
+        text += "📅 <b>Активность:</b>\n"
+        text += f"▫️ Создано сегодня: <b>{today_created}</b>\n"
+        text += f"▫️ Завершено за неделю: <b>{completed_last_week}</b>\n\n"
+        
+        top_performers = stats.get('top_performers', [])
+        if top_performers and len(top_performers) > 0:
+            text += "🏆 <b>Топ исполнителей:</b>\n"
+            for i, performer in enumerate(top_performers[:3], 1):
+                medals = {1: '🥇', 2: '🥈', 3: '🥉'}
+                medal = medals.get(i, '🏅')
+                
+                username = performer.get('username', 'Неизвестно')
+                first_name = performer.get('first_name')
+                last_name = performer.get('last_name')
+                count = performer.get('task_count', 0)
+                
+                # Форматируем имя исполнителя
+                if first_name or last_name:
+                    user_display = f"{first_name or ''} {last_name or ''}".strip() + f" (@{username})"
+                else:
+                    user_display = f"@{username}"
+                
+                text += f"{medal} {user_display}: {count} задач\n"
+        else:
+            text += "🏆 <b>Топ исполнителей:</b>\n"
+            text += "<i>Пока нет данных</i>\n"
+        
+        # Кнопки для экспорта (адаптивные для мобильных)
+        buttons = []
+        is_mobile = is_mobile_device()
+        
+        if is_mobile:
+            # На мобильных - по одной кнопке в ряд
+            buttons.append([InlineKeyboardButton(text="📊 Полный отчёт", callback_data="export_full")])
+            buttons.append([InlineKeyboardButton(text="📈 По статусам", callback_data="export_status")])
+            buttons.append([InlineKeyboardButton(text="👥 По исполнителям", callback_data="export_users")])
+        else:
+            # На десктопе - группируем
+            buttons.append([
+                InlineKeyboardButton(text="📊 Полный отчёт Excel", callback_data="export_full"),
+                InlineKeyboardButton(text="📈 По статусам", callback_data="export_status")
+            ])
+            buttons.append([InlineKeyboardButton(text="👥 Отчёт по исполнителям", callback_data="export_users")])
+        
+        buttons.append([InlineKeyboardButton(text="🔄 Обновить", callback_data="dashboard")])
+        buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        try:
+            await callback.message.edit_text(
+                text,
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ Could not edit message, sending new one: {e}")
+            try:
+                await callback.message.delete()
+            except:
+                pass
+            await callback.message.answer(
+                text,
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+        
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"❌ Error in dashboard callback: {e}", exc_info=True)
+        await callback.answer(
+            f"❌ Ошибка при получении статистики: {str(e)[:50]}",
+            show_alert=True
+        )
 
 
 @core_router.callback_query(F.data.startswith("export_"))
@@ -1659,6 +1779,8 @@ async def callback_export_report(callback: CallbackQuery):
     """Генерация и отправка Excel отчёта"""
     from app.services.statistics import generate_excel_report
     from aiogram.types import BufferedInputFile
+    from datetime import datetime
+    from app.keyboards.task_keyboards import is_mobile_device
     
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
@@ -1669,28 +1791,40 @@ async def callback_export_report(callback: CallbackQuery):
     
     logger.info(f"📊 Excel export requested by {username}: {report_type}")
     
-    user = get_or_create_user(telegram_id, username, first_name, last_name)
-    if not user or user['role'] != 'admin':
-        await callback.answer("❌ Только администраторы могут экспортировать отчёты", show_alert=True)
-        return
-    
-    await callback.answer("📊 Генерирую отчёт... Пожалуйста, подождите.", show_alert=False)
-    
     try:
+        user = get_or_create_user(telegram_id, username, first_name, last_name)
+        if not user:
+            await callback.answer("❌ Доступ запрещён", show_alert=True)
+            return
+        
+        if user['role'] != 'admin':
+            await callback.answer("❌ Только администраторы могут экспортировать отчёты", show_alert=True)
+            return
+        
+        await callback.answer("📊 Генерирую отчёт... Пожалуйста, подождите.", show_alert=False)
+        
         # Генерация отчёта
         logger.info(f"🔄 Starting report generation: {report_type}")
         excel_file = generate_excel_report(report_type)
+        
+        if not excel_file:
+            raise Exception("Не удалось создать файл отчёта")
         
         # Определение имени файла
         report_names = {
             'full': 'Полный_отчёт',
             'status': 'Отчёт_по_статусам',
-            'users': 'Отчёт_по_исполнителям'
+            'users': 'Отчёт_по_исполнителям',
+            'priority': 'Отчёт_по_приоритетам'
         }
         filename = f"{report_names.get(report_type, 'Отчёт')}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
         
         # Отправка файла
-        document = BufferedInputFile(excel_file.read(), filename=filename)
+        file_data = excel_file.read()
+        if not file_data:
+            raise Exception("Файл отчёта пуст")
+        
+        document = BufferedInputFile(file_data, filename=filename)
         
         await callback.message.answer_document(
             document=document,
@@ -1704,10 +1838,21 @@ async def callback_export_report(callback: CallbackQuery):
         
     except Exception as e:
         logger.error(f"❌ Error generating/sending Excel report: {e}", exc_info=True)
-        await callback.message.answer(
-            "❌ Произошла ошибка при генерации отчёта. Попробуйте позже.",
-            reply_markup=get_main_keyboard(user['role'])
-        )
+        try:
+            user = get_or_create_user(telegram_id, username, first_name, last_name)
+            if user:
+                await callback.message.answer(
+                    f"❌ <b>Ошибка при генерации отчёта</b>\n\n"
+                    f"Детали: {str(e)[:200]}\n\n"
+                    f"Попробуйте позже или обратитесь к администратору.",
+                    parse_mode='HTML',
+                    reply_markup=get_main_keyboard(user['role'], is_mobile_device())
+                )
+            else:
+                await callback.answer("❌ Ошибка при генерации отчёта", show_alert=True)
+        except Exception as inner_e:
+            logger.error(f"❌ Error in error handler: {inner_e}", exc_info=True)
+            await callback.answer("❌ Критическая ошибка", show_alert=True)
 
 
 @core_router.callback_query(F.data == "search_tasks")
@@ -1814,7 +1959,7 @@ async def show_search_results_page(message: Message, user: dict, query: str, pag
         if total_count == 0:
             await message.answer(
                 f"🔍 По запросу «{query}» ничего не найдено.",
-                reply_markup=get_main_keyboard(user['role'])
+                reply_markup=get_main_keyboard(user['role'], is_mobile_device())
             )
             return
         
@@ -1920,6 +2065,18 @@ async def show_search_results_page(message: Message, user: dict, query: str, pag
 @core_router.callback_query(F.data == "cancel")
 async def callback_cancel(callback: CallbackQuery, state: FSMContext):
     """Отмена текущей операции"""
+    # Отменяем задачи показа меню для фото, если они есть
+    from app.handlers.photos import _pending_photo_menus
+    user_id = str(callback.from_user.id)
+    data = await state.get_data()
+    task_id = data.get('task_id')
+    
+    if task_id:
+        key = f"{user_id}_{task_id}"
+        if key in _pending_photo_menus:
+            _pending_photo_menus[key].cancel()
+            del _pending_photo_menus[key]
+    
     telegram_id = str(callback.from_user.id)
     username = callback.from_user.username
     
@@ -1942,7 +2099,7 @@ async def callback_cancel(callback: CallbackQuery, state: FSMContext):
     
     await callback.message.answer(
         "❌ Операция отменена.\n\nВыберите действие:",
-        reply_markup=get_main_keyboard(user['role'])
+        reply_markup=get_main_keyboard(user['role'], is_mobile_device())
     )
     await callback.answer()
 
@@ -1976,7 +2133,7 @@ async def callback_back_to_main(callback: CallbackQuery, state: FSMContext):
         f"Роль: <b>{role_text}</b>\n\n"
         f"Выберите действие:",
         parse_mode='HTML',
-        reply_markup=get_main_keyboard(user['role'])
+        reply_markup=get_main_keyboard(user['role'], is_mobile_device())
     )
     await callback.answer()
 

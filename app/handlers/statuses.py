@@ -9,7 +9,8 @@ from aiogram.fsm.context import FSMContext
 from app.handlers import statuses_router
 from app.database import get_db_connection
 from app.services.users import get_or_create_user
-from app.keyboards.task_keyboards import get_task_keyboard
+from app.services.task_history import add_task_history_entry
+from app.keyboards.task_keyboards import get_task_keyboard, is_mobile_device
 from app.keyboards.main_menu import get_main_keyboard
 from app.states import CompleteTaskStates, ChangeAssigneeStates, ReopenTaskStates
 from app.logging_config import get_logger
@@ -44,7 +45,7 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
     
     try:
         cur.execute(
-            """SELECT t.id, t.title, t.assigned_to_id, t.priority, t.due_date 
+            """SELECT t.id, t.title, t.assigned_to_id, t.priority, t.due_date, t.status 
                FROM tasks t 
                WHERE t.id = ?""",
             (task_id,)
@@ -107,17 +108,33 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
         
         logger.debug(f"💾 Updating task #{task_id} status to {new_status}")
         
+        # Получаем старый статус для истории
+        old_status = task.get('status')
+        
         if new_status == 'in_progress' and old_assigned_to_id is None:
             logger.info(f"📌 Assigning unassigned task #{task_id} to {username}")
             cur.execute(
                 "UPDATE tasks SET status = ?, assigned_to_id = ?, updated_at = datetime('now') WHERE id = ?",
                 (new_status, user['id'], task_id)
             )
+            # Записываем в историю используя то же соединение
+            cur.execute(
+                "INSERT INTO task_history (task_id, user_id, change_type, old_value, new_value) VALUES (?, ?, ?, ?, ?)",
+                (task_id, user['id'], 'assignee', None, str(user['id']))
+            )
         else:
             cur.execute(
                 "UPDATE tasks SET status = ?, updated_at = datetime('now') WHERE id = ?",
                 (new_status, task_id)
             )
+        
+        # Записываем изменение статуса в историю используя то же соединение
+        if old_status != new_status:
+            cur.execute(
+                "INSERT INTO task_history (task_id, user_id, change_type, old_value, new_value) VALUES (?, ?, ?, ?, ?)",
+                (task_id, user['id'], 'status', old_status, new_status)
+            )
+        
         conn.commit()
         
         status_text = {
@@ -128,56 +145,99 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
         
         logger.info(f"✅ Task #{task_id} status updated to {new_status}")
         
-        if new_status == 'in_progress' and old_assigned_to_id is None:
-            logger.info(f"📧 Sending admin notifications for task #{task_id} taken by {username}")
-            
-            priority_emoji = {
-                'urgent': '🔴',
-                'high': '🟠',
-                'medium': '🟡',
-                'low': '🟢'
-            }.get(task['priority'], '⚪')
-            
-            # Форматируем имя исполнителя
-            if first_name or last_name:
-                executor_display = f"{first_name or ''} {last_name or ''}".strip() + f" (@{username})"
-            else:
-                executor_display = f"@{username}"
-            
-            admin_message = (
-                f"🔔 <b>Задача взята в работу</b>\n\n"
-                f"{priority_emoji} <b>#{task_id}:</b> {task['title']}\n\n"
-                f"👤 <b>Исполнитель:</b> {executor_display}\n"
-                f"📅 <b>Срок:</b> {task['due_date']}\n\n"
-                f"Задача была свободной и взята в работу пользователем."
-            )
-            
-            admins = get_all_admins()
-            from app.main import bot
-            
-            for admin_telegram_id in admins:
-                if admin_telegram_id != telegram_id:
-                    try:
-                        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                            [InlineKeyboardButton(text="📂 Открыть задачу", callback_data=f"task_{task_id}")]
-                        ])
-                        
-                        await bot.send_message(
-                            chat_id=admin_telegram_id,
-                            text=admin_message,
-                            parse_mode='HTML',
-                            reply_markup=keyboard
-                        )
-                        logger.info(f"✅ Admin notification sent to {admin_telegram_id} for task #{task_id}")
-                    except Exception as e:
-                        logger.error(f"❌ Failed to send admin notification to {admin_telegram_id}: {e}")
-        
+        # Сразу отвечаем пользователю, чтобы не было задержки
         await callback.answer(f"✅ Статус обновлён на: {status_text}", show_alert=True)
         
+        # Закрываем соединение перед асинхронными операциями
+        cur.close()
+        conn.close()
+        
+        # Тяжелые операции (уведомления и обновление сообщения) выполняем асинхронно после ответа
+        import asyncio
+        if new_status == 'in_progress' and old_assigned_to_id is None:
+            # Запускаем отправку уведомлений в фоне
+            asyncio.create_task(
+                send_admin_notifications_async(task_id, task['title'], task['priority'], task['due_date'], 
+                                              telegram_id, username, first_name, last_name)
+            )
+        
+        # Обновление сообщения также выполняем асинхронно
+        asyncio.create_task(
+            update_task_message_async(callback, task_id, user, new_status)
+        )
+        
+        return  # Выходим из функции, чтобы не выполнять код ниже
+    
+    except Exception as e:
+        logger.error(f"❌ Error updating status for task #{task_id}: {e}", exc_info=True)
+        await callback.answer(f"❌ Ошибка при обновлении статуса: {str(e)}", show_alert=True)
+    finally:
+        if 'cur' in locals():
+            cur.close()
+        if 'conn' in locals():
+            conn.close()
+
+
+async def send_admin_notifications_async(task_id: int, title: str, priority: str, due_date, 
+                                        telegram_id: str, username: str, first_name: str, last_name: str):
+    """Асинхронная отправка уведомлений админам"""
+    try:
+        logger.info(f"📧 Sending admin notifications for task #{task_id} taken by {username}")
+        
+        priority_emoji = {
+            'urgent': '🔴',
+            'high': '🟠',
+            'medium': '🟡',
+            'low': '🟢'
+        }.get(priority, '⚪')
+        
+        # Форматируем имя исполнителя
+        if first_name or last_name:
+            executor_display = f"{first_name or ''} {last_name or ''}".strip() + f" (@{username})"
+        else:
+            executor_display = f"@{username}"
+        
+        admin_message = (
+            f"🔔 <b>Задача взята в работу</b>\n\n"
+            f"{priority_emoji} <b>#{task_id}:</b> {title}\n\n"
+            f"👤 <b>Исполнитель:</b> {executor_display}\n"
+            f"📅 <b>Срок:</b> {due_date}\n\n"
+            f"Задача была свободной и взята в работу пользователем."
+        )
+        
+        admins = get_all_admins()
+        from app.main import bot
+        
+        for admin_telegram_id in admins:
+            if admin_telegram_id != telegram_id:
+                try:
+                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="📂 Открыть задачу", callback_data=f"task_{task_id}")]
+                    ])
+                    
+                    await bot.send_message(
+                        chat_id=admin_telegram_id,
+                        text=admin_message,
+                        parse_mode='HTML',
+                        reply_markup=keyboard
+                    )
+                    logger.info(f"✅ Admin notification sent to {admin_telegram_id} for task #{task_id}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to send admin notification to {admin_telegram_id}: {e}")
+    except Exception as e:
+        logger.error(f"❌ Error in send_admin_notifications_async: {e}", exc_info=True)
+
+
+async def update_task_message_async(callback: CallbackQuery, task_id: int, user: dict, new_status: str):
+    """Асинхронное обновление сообщения с задачей"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
         cur.execute(
             """SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, 
                       u.username, u.first_name, u.last_name, t.created_at, t.assigned_to_id, 
-                      t.completion_comment, t.photo_file_id, t.task_photo_file_id
+                      t.completion_comment, t.photo_file_id
                FROM tasks t
                LEFT JOIN users u ON t.assigned_to_id = u.id
                WHERE t.id = ?""",
@@ -185,50 +245,56 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
         )
         updated_task = cur.fetchone()
         
-        if updated_task:
-            tid = updated_task['id']
-            title = updated_task['title']
-            description = updated_task['description']
-            status = updated_task['status']
-            priority = updated_task['priority']
-            due_date_raw = updated_task['due_date']
-            assigned_username = updated_task.get('username')
-            assigned_first_name = updated_task.get('first_name')
-            assigned_last_name = updated_task.get('last_name')
-            created_at = updated_task['created_at']
-            assigned_to_id = updated_task['assigned_to_id']
-            completion_comment = updated_task.get('completion_comment')
-            photo_file_id = updated_task.get('photo_file_id')
-            task_photo_file_id = updated_task.get('task_photo_file_id')
-            
-            from app.config import format_datetime_for_display
-            due_date = format_datetime_for_display(due_date_raw)
-            created_at_formatted = format_datetime_for_display(created_at)
-            
-            if assigned_username:
-                if assigned_first_name or assigned_last_name:
-                    assignee_display = f"{assigned_first_name or ''} {assigned_last_name or ''}".strip() + f" (@{assigned_username})"
-                else:
-                    assignee_display = f"@{assigned_username}"
+        if not updated_task:
+            logger.warning(f"⚠️ Task #{task_id} not found for message update")
+            return
+        
+        # Получаем все фото задачи из новой таблицы
+        cur.execute("SELECT photo_file_id FROM task_photos WHERE task_id = ? ORDER BY created_at", (task_id,))
+        task_photos = cur.fetchall()
+        task_photo_file_ids = [p['photo_file_id'] for p in task_photos]
+        
+        tid = updated_task['id']
+        title = updated_task['title']
+        description = updated_task['description']
+        status = updated_task['status']
+        priority = updated_task['priority']
+        due_date_raw = updated_task['due_date']
+        assigned_username = updated_task.get('username')
+        assigned_first_name = updated_task.get('first_name')
+        assigned_last_name = updated_task.get('last_name')
+        created_at = updated_task['created_at']
+        assigned_to_id = updated_task['assigned_to_id']
+        completion_comment = updated_task.get('completion_comment')
+        
+        from app.config import format_datetime_for_display
+        due_date = format_datetime_for_display(due_date_raw)
+        created_at_formatted = format_datetime_for_display(created_at)
+        
+        if assigned_username:
+            if assigned_first_name or assigned_last_name:
+                assignee_display = f"{assigned_first_name or ''} {assigned_last_name or ''}".strip() + f" (@{assigned_username})"
             else:
-                assignee_display = "Не назначена"
-            
-            status_display = {
-                'pending': '⏳ Ожидает',
-                'in_progress': '🔄 В работе',
-                'partially_completed': '🔶 Частично завершена',
-                'completed': '✅ Завершена',
-                'rejected': '❌ Отклонена'
-            }.get(status, status)
-            
-            priority_display = {
-                'urgent': '🔴 Срочно',
-                'high': '🟠 Высокий',
-                'medium': '🟡 Средний',
-                'low': '🟢 Низкий'
-            }.get(priority, priority)
-            
-            text = f"""📋 <b>Задача #{tid}</b>
+                assignee_display = f"@{assigned_username}"
+        else:
+            assignee_display = "Не назначена"
+        
+        status_display = {
+            'pending': '⏳ Ожидает',
+            'in_progress': '🔄 В работе',
+            'partially_completed': '🔶 Частично завершена',
+            'completed': '✅ Завершена',
+            'rejected': '❌ Отклонена'
+        }.get(status, status)
+        
+        priority_display = {
+            'urgent': '🔴 Срочно',
+            'high': '🟠 Высокий',
+            'medium': '🟡 Средний',
+            'low': '🟢 Низкий'
+        }.get(priority, priority)
+        
+        text = f"""📋 <b>Задача #{tid}</b>
 
 <b>Название:</b> {title}
 <b>Описание:</b> {description or 'Нет описания'}
@@ -238,35 +304,33 @@ async def callback_update_status(callback: CallbackQuery, state: FSMContext):
 <b>Назначена:</b> {assignee_display}
 <b>Создана:</b> {created_at_formatted}
 """
-            
-            if task_photo_file_id:
-                text += "<b>📸 Фото:</b> Есть (нажмите кнопку ниже)\n"
-            
-            if status in ['completed', 'partially_completed'] and completion_comment:
-                text += f"\n💬 <b>Комментарий:</b>\n{completion_comment}\n"
-            
-            if status not in ['completed', 'partially_completed']:
-                text += "\nВыберите новый статус:"
-            
-            has_task_photo = bool(task_photo_file_id)
-            
-            try:
-                await callback.message.edit_text(
-                    text,
-                    parse_mode='HTML',
-                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin', has_task_photo)
-                )
-            except Exception:
-                await callback.message.delete()
-                await callback.message.answer(
-                    text,
-                    parse_mode='HTML',
-                    reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin', has_task_photo)
-                )
-    
+        
+        if task_photo_file_ids:
+            text += f"<b>📸 Фото:</b> {len(task_photo_file_ids)} шт. (нажмите кнопку ниже)\n"
+        
+        if status in ['completed', 'partially_completed'] and completion_comment:
+            text += f"\n💬 <b>Комментарий:</b>\n{completion_comment}\n"
+        
+        if status not in ['completed', 'partially_completed']:
+            text += "\nВыберите новый статус:"
+        
+        has_task_photo = len(task_photo_file_ids) > 0
+        
+        try:
+            await callback.message.edit_text(
+                text,
+                parse_mode='HTML',
+                reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin', has_task_photo, is_mobile_device())
+            )
+        except Exception:
+            await callback.message.delete()
+            await callback.message.answer(
+                text,
+                parse_mode='HTML',
+                reply_markup=get_task_keyboard(task_id, status, assigned_to_id, user['id'], user['role'] == 'admin', has_task_photo, is_mobile_device())
+            )
     except Exception as e:
-        logger.error(f"❌ Error updating status for task #{task_id}: {e}", exc_info=True)
-        await callback.answer(f"❌ Ошибка при обновлении статуса: {str(e)}", show_alert=True)
+        logger.error(f"❌ Error updating task message: {e}", exc_info=True)
     finally:
         cur.close()
         conn.close()
@@ -485,7 +549,7 @@ async def process_reopen_comment(message: Message, state: FSMContext):
             f"✅ <b>Задача #{task_id} возвращена в работу!</b>\n\n"
             f"Исполнитель получил уведомление с вашим комментарием.",
             parse_mode='HTML',
-            reply_markup=get_main_keyboard(user['role'])
+            reply_markup=get_main_keyboard(user['role'], is_mobile_device())
         )
         
         await state.clear()
@@ -818,7 +882,7 @@ async def callback_select_assignee(callback: CallbackQuery, state: FSMContext):
             f"Задача #{task_id}\n"
             f"Новый исполнитель: {new_assignee_display}",
             parse_mode='HTML',
-            reply_markup=get_main_keyboard(user['role'])
+            reply_markup=get_main_keyboard(user['role'], is_mobile_device())
         )
         await callback.answer()
         await state.clear()

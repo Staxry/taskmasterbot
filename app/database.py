@@ -161,6 +161,114 @@ def init_database():
             )
         """)
         
+        # Создание таблицы для фото задач (поддержка множественных фото)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS task_photos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NOT NULL,
+                photo_file_id TEXT NOT NULL,
+                created_at timestamp DEFAULT (datetime('now')),
+                FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+            )
+        """)
+        
+        # Создаем индекс для быстрого поиска фото по задаче
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_task_photos_task_id ON task_photos(task_id)
+        """)
+        
+        # Создание таблицы настроек уведомлений пользователей
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_notification_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER UNIQUE NOT NULL,
+                enable_24h_reminder INTEGER DEFAULT 1 CHECK(enable_24h_reminder IN (0, 1)),
+                enable_3h_reminder INTEGER DEFAULT 1 CHECK(enable_3h_reminder IN (0, 1)),
+                enable_1h_reminder INTEGER DEFAULT 1 CHECK(enable_1h_reminder IN (0, 1)),
+                enable_overdue_notifications INTEGER DEFAULT 1 CHECK(enable_overdue_notifications IN (0, 1)),
+                enable_comment_notifications INTEGER DEFAULT 1 CHECK(enable_comment_notifications IN (0, 1)),
+                quiet_hours_start TEXT DEFAULT '22:00',
+                quiet_hours_end TEXT DEFAULT '08:00',
+                custom_reminder_intervals TEXT,
+                created_at timestamp DEFAULT (datetime('now')),
+                updated_at timestamp DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        
+        # Создание таблицы истории изменений задач
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS task_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                change_type TEXT NOT NULL CHECK(change_type IN ('status', 'priority', 'assignee', 'due_date', 'title', 'description', 'created', 'reopened')),
+                old_value TEXT,
+                new_value TEXT,
+                created_at timestamp DEFAULT (datetime('now')),
+                FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
+        
+        # Создание индекса для истории изменений
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_task_history_task_id ON task_history(task_id)
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_task_history_created_at ON task_history(created_at)
+        """)
+        
+        # Создание таблицы комментариев к задачам
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS task_comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                comment_text TEXT NOT NULL,
+                created_at timestamp DEFAULT (datetime('now')),
+                updated_at timestamp DEFAULT (datetime('now')),
+                FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
+        
+        # Создание индекса для комментариев
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_task_comments_task_id ON task_comments(task_id)
+        """)
+        
+        # Создание таблицы файлов комментариев
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS comment_files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                comment_id INTEGER NOT NULL,
+                file_id TEXT NOT NULL,
+                file_type TEXT NOT NULL CHECK(file_type IN ('photo', 'document', 'video', 'audio', 'voice')),
+                file_name TEXT,
+                created_at timestamp DEFAULT (datetime('now')),
+                FOREIGN KEY (comment_id) REFERENCES task_comments(id) ON DELETE CASCADE
+            )
+        """)
+        
+        # Создание индекса для файлов комментариев
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_comment_files_comment_id ON comment_files(comment_id)
+        """)
+        
+        # Создание таблицы упоминаний в комментариях
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS comment_mentions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                comment_id INTEGER NOT NULL,
+                mentioned_user_id INTEGER NOT NULL,
+                created_at timestamp DEFAULT (datetime('now')),
+                FOREIGN KEY (comment_id) REFERENCES task_comments(id) ON DELETE CASCADE,
+                FOREIGN KEY (mentioned_user_id) REFERENCES users(id),
+                UNIQUE(comment_id, mentioned_user_id)
+            )
+        """)
+        
         conn.commit()
         logger.info("✅ SQLite database schema initialized successfully")
         logger.info(f"📁 Database file: {DATABASE_PATH}")

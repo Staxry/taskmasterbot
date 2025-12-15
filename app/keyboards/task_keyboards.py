@@ -9,11 +9,29 @@ from app.config import get_now
 logger = get_logger(__name__)
 
 
+def is_mobile_device(user_id: int = None) -> bool:
+    """
+    Определить, является ли устройство мобильным
+    В Telegram нет прямого способа определить устройство,
+    поэтому используем эвристику: компактные клавиатуры для всех
+    (можно расширить логику в будущем)
+    
+    Args:
+        user_id: ID пользователя (для будущего расширения)
+    
+    Returns:
+        bool: True если мобильное устройство
+    """
+    # По умолчанию считаем, что все пользователи на мобильных
+    # для лучшего UX на маленьких экранах
+    return True
+
+
 def get_task_keyboard(task_id: int, current_status: str, assigned_to_id: int = None, 
                      user_id: int = None, is_admin: bool = False, 
-                     has_task_photo: bool = False) -> InlineKeyboardMarkup:
+                     has_task_photo: bool = False, is_mobile: bool = True) -> InlineKeyboardMarkup:
     """
-    Клавиатура для работы с задачей
+    Клавиатура для работы с задачей (адаптивная для мобильных)
     
     Args:
         task_id: ID задачи
@@ -22,17 +40,31 @@ def get_task_keyboard(task_id: int, current_status: str, assigned_to_id: int = N
         user_id: ID текущего пользователя
         is_admin: Является ли пользователь админом
         has_task_photo: Есть ли фото у задачи
+        is_mobile: Является ли устройство мобильным
     
     Returns:
         InlineKeyboardMarkup: Клавиатура задачи
     """
-    logger.debug(f"🎹 Generating task keyboard for task #{task_id}, status: {current_status}, has_photo: {has_task_photo}")
+    logger.debug(f"🎹 Generating task keyboard for task #{task_id}, status: {current_status}, mobile: {is_mobile}")
     
     buttons = []
     
     # Кнопка просмотра фото задачи (если есть)
     if has_task_photo:
-        buttons.append([InlineKeyboardButton(text="📸 Просмотреть фото", callback_data=f"view_task_photo_{task_id}")])
+        buttons.append([InlineKeyboardButton(text="📸 Фото", callback_data=f"view_task_photo_{task_id}")])
+    
+    # Кнопки комментариев и истории
+    action_buttons = []
+    action_buttons.append(InlineKeyboardButton(text="💬 Комментарии", callback_data=f"task_comments_{task_id}"))
+    action_buttons.append(InlineKeyboardButton(text="📜 История", callback_data=f"task_history_{task_id}"))
+    
+    if is_mobile:
+        # На мобильных - по одной кнопке в ряд
+        buttons.append([action_buttons[0]])
+        buttons.append([action_buttons[1]])
+    else:
+        # На десктопе - две кнопки в ряд
+        buttons.append(action_buttons)
     
     # Если задача не назначена и пользователь не админ - показываем кнопку "Взять в работу"
     if assigned_to_id is None and not is_admin:
@@ -44,8 +76,15 @@ def get_task_keyboard(task_id: int, current_status: str, assigned_to_id: int = N
     # Если задача завершена или частично завершена - показываем кнопки для админов
     if current_status in ['completed', 'partially_completed']:
         if is_admin:
-            buttons.append([InlineKeyboardButton(text="🔄 Вернуть в работу", callback_data=f"reopen_{task_id}")])
-            buttons.append([InlineKeyboardButton(text="👤 Сменить исполнителя", callback_data=f"change_assignee_{task_id}")])
+            admin_buttons = []
+            admin_buttons.append(InlineKeyboardButton(text="🔄 Вернуть", callback_data=f"reopen_{task_id}"))
+            admin_buttons.append(InlineKeyboardButton(text="👤 Сменить", callback_data=f"change_assignee_{task_id}"))
+            
+            if is_mobile:
+                buttons.append([admin_buttons[0]])
+                buttons.append([admin_buttons[1]])
+            else:
+                buttons.append(admin_buttons)
         buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="my_tasks")])
         logger.debug(f"✅ Generated keyboard for completed task (admin: {is_admin})")
         return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -54,7 +93,7 @@ def get_task_keyboard(task_id: int, current_status: str, assigned_to_id: int = N
     statuses = {
         'pending': '⏳ Ожидает',
         'in_progress': '🔄 В работе',
-        'partially_completed': '🔶 Частично завершена',
+        'partially_completed': '🔶 Частично',
         'completed': '✅ Завершена',
         'rejected': '❌ Отклонена'
     }
@@ -69,9 +108,13 @@ def get_task_keyboard(task_id: int, current_status: str, assigned_to_id: int = N
                 )
             )
     
-    # Размещаем кнопки статусов по 2 в ряд
-    for i in range(0, len(status_buttons), 2):
-        buttons.append(status_buttons[i:i+2])
+    # На мобильных - по одной кнопке в ряд, на десктопе - по две
+    if is_mobile:
+        for btn in status_buttons:
+            buttons.append([btn])
+    else:
+        for i in range(0, len(status_buttons), 2):
+            buttons.append(status_buttons[i:i+2])
     
     # Для админов добавляем кнопку смены исполнителя
     if is_admin and assigned_to_id is not None:
@@ -79,7 +122,7 @@ def get_task_keyboard(task_id: int, current_status: str, assigned_to_id: int = N
     
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="my_tasks")])
     
-    logger.debug(f"✅ Generated task keyboard with {len(status_buttons)} status buttons")
+    logger.debug(f"✅ Generated task keyboard with {len(status_buttons)} status buttons (mobile: {is_mobile})")
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
