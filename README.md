@@ -165,7 +165,6 @@ TaskMasterBot/
 ├── migrate_to_timestamp.py  # Скрипт миграции БД
 ├── START_BOT.sh           # Скрипт управления ботом
 ├── requirements.txt       # Зависимости Python
-├── pyproject.toml         # Конфигурация проекта (uv)
 └── README.md              # Документация
 ```
 
